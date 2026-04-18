@@ -10,20 +10,31 @@ void scan_engine_init(void) {
 }
 
 void scan_cycle_run(void) {
-    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_0);  // scan pulse for logic analyzer
+    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_0);  // scan pulse
 
     scan_count++;
 
-    // === 3-phase PLC scan cycle ===
+    // === PLC scan cycle ===
 
     // Phase 1: Read inputs
     io_read_inputs();
 
-    // Phase 2: Execute logic (dummy logic for now)
-    // Toggle output 0 every 50 scans = every 500 ms
-    if ((scan_count % 50) == 0) {
-        g_io.digital_out[0] = !g_io.digital_out[0];
-    }
+    // Phase 2: Execute ladder logic
+    // -------------------------------------------------------------------
+    // Motor start/stop with seal-in:
+    //   Motor = (Start OR Motor) AND NOT Stop
+    //
+    //    Start         Stop       Motor
+    //   --| |---+------|/|-------( )--
+    //           |
+    //    Motor  |
+    //   --| |---+
+    // -------------------------------------------------------------------
+    bool start  = g_io.digital_in[0];
+    bool stop   = g_io.digital_in[1];
+    bool motor  = g_io.digital_out[0];   // current motor state
+
+    g_io.digital_out[0] = (start || motor) && !stop;
 
     // Phase 3: Write outputs
     io_write_outputs();

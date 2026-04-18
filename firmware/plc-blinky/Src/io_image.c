@@ -10,14 +10,22 @@ void io_image_init(void) {
 }
 
 void io_read_inputs(void) {
-    // For now: no real inputs wired yet.
-    // On Day 3 we'll wire 8 GPIO pins and read them here.
-    // Leaving digital_in[] at zero for now.
+    // Input 0: Start button (active-LOW, pressed = pin grounded)
+    // Input 1: Stop button (active-LOW)
+    //
+    // With pull-ups enabled:
+    //   Pin HIGH (not pressed) = HAL reads GPIO_PIN_SET
+    //   Pin LOW  (pressed)     = HAL reads GPIO_PIN_RESET
+    //
+    // We invert so that "pressed" = true in our image.
 
-    // Future code will look like:
-    // g_io.digital_in[0] = (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_0) == GPIO_PIN_SET);
-    // g_io.digital_in[1] = (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_1) == GPIO_PIN_SET);
-    // etc.
+    g_io.digital_in[0] = (HAL_GPIO_ReadPin(START_BTN_GPIO_Port, START_BTN_Pin) == GPIO_PIN_RESET);
+    g_io.digital_in[1] = (HAL_GPIO_ReadPin(STOP_BTN_GPIO_Port, STOP_BTN_Pin) == GPIO_PIN_RESET);
+
+    // Remaining digital inputs stay at zero (not wired yet)
+    for (int i = 2; i < PLC_DIGITAL_INPUT_COUNT; i++) {
+        g_io.digital_in[i] = false;
+    }
 }
 
 void io_write_outputs(void) {

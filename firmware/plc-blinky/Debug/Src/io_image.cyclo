@@ -1,3 +1,3 @@
 ../Src/io_image.c:8:6:io_image_init	1
-../Src/io_image.c:12:6:io_read_inputs	1
-../Src/io_image.c:23:6:io_write_outputs	1
+../Src/io_image.c:12:6:io_read_inputs	2
+../Src/io_image.c:31:6:io_write_outputs	1

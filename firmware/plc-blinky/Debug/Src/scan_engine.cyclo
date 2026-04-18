@@ -1,3 +1,3 @@
 ../Src/scan_engine.c:7:6:scan_engine_init	1
-../Src/scan_engine.c:12:6:scan_cycle_run	2
-../Src/scan_engine.c:32:10:scan_get_count	1
+../Src/scan_engine.c:12:6:scan_cycle_run	4
+../Src/scan_engine.c:43:10:scan_get_count	1
