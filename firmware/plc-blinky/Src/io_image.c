@@ -27,4 +27,5 @@ void io_write_outputs(void) {
     // Also keep PC13 mirroring the output for visual feedback
     HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13,
                       g_io.digital_out[0] ? GPIO_PIN_RESET : GPIO_PIN_SET);
+
 }

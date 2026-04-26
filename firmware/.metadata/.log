@@ -631,3 +631,22 @@ COM4
 
 !ENTRY org.eclipse.cdt.core 1 0 2026-04-26 07:27:22.941
 !MESSAGE Indexed 'plc-blinky' (23 sources, 116 headers) in 1.22 sec: 9,012 declarations; 44,577 references; 2 unresolved inclusions; 36 syntax errors; 188 unresolved names (0.35%)
+!SESSION 2026-04-26 18:35:21.982 -----------------------------------------------
+eclipse.buildId=Version 2.0.0
+java.version=21.0.8
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=win32, ARCH=x86_64, WS=win32, NL=en_IN
+Command-line arguments:  -os win32 -ws win32 -arch x86_64
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2026-04-26 18:35:31.322
+!MESSAGE Log4j2 initialized with config file C:\Projects\stm32-mini-plc\firmware\.metadata\.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2026-04-26 18:35:37.949
+!MESSAGE Started RMI Server, listening on port 41337
+
+!ENTRY com.st.stm32cube.ide.mpu.remote.serial 1 1 2026-04-26 18:35:39.034
+!MESSAGE Executed PowerShell command powershell.exe -Command "Get-CimInstance -ClassName Win32_SerialPort | Select-Object -ExpandProperty DeviceID":
+
+
+!ENTRY com.st.stm32cube.ide.mpu.remote.serial 1 1 2026-04-26 18:35:39.034
+!MESSAGE port: 

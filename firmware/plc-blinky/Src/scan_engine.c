@@ -22,9 +22,9 @@ void scan_cycle_run(void) {
     // Phase 1: Read inputs
     io_read_inputs();
 
-    ladder_vm_execute(echo_program, ECHO_PROGRAM_LEN);
+    //ladder_vm_execute(echo_program, ECHO_PROGRAM_LEN);
     // Phase 2: Execute ladder program through the VM
-    //ladder_vm_execute(motor_start_stop_program, MOTOR_PROGRAM_LEN);
+      ladder_vm_execute(motor_start_stop_program, MOTOR_PROGRAM_LEN);
     //ladder_vm_execute(timer_demo_program, TIMER_DEMO_PROGRAM_LEN);
     //ladder_vm_execute(not_gate_program, NOT_GATE_PROGRAM_LEN);
     //ladder_vm_execute(counter_demo_program, COUNTER_DEMO_PROGRAM_LEN);
