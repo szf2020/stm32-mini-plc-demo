@@ -1,0 +1,12 @@
+#ifndef INC_UART_CONSOLE_H_
+#define INC_UART_CONSOLE_H_
+
+#include <stdint.h>
+
+void uart_console_init(void);
+void uart_console_handle_rx(uint8_t byte);   // called from ISR
+void uart_console_poll(void);                // called from main loop
+
+const uint8_t *uart_get_active_program(void);
+uint16_t       uart_get_active_program_len(void);
+#endif /* INC_UART_CONSOLE_H_ */
