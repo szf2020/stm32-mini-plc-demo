@@ -142,17 +142,14 @@ vm_result_t ladder_vm_execute(const uint8_t *program, uint16_t program_len) {
                 break;
 
             case OP_RST:
-                // Conditional reset: only reset if stack top is HIGH
-                if (sp >= 0 && stack[sp]) {
-                    if (addr >= 0x20 && addr <= 0x27) {
-                        plc_timer_t *t = &g_timers[addr - ADDR_TIMER_BASE];
-                        t->elapsed_ms = 0;
-                        t->output = false;
-                    } else if (addr >= 0x30 && addr <= 0x37) {
-                        plc_counter_t *c = &g_counters[addr - ADDR_COUNTER_BASE];
-                        c->count = 0;
-                        c->output = false;
-                    }
+                if (addr >= 0x20 && addr <= 0x27) {
+                    plc_timer_t *t = &g_timers[addr - ADDR_TIMER_BASE];
+                    t->elapsed_ms = 0;
+                    t->output = false;
+                } else if (addr >= 0x30 && addr <= 0x37) {
+                    plc_counter_t *c = &g_counters[addr - ADDR_COUNTER_BASE];
+                    c->count = 0;
+                    c->output = false;
                 }
                 break;
 

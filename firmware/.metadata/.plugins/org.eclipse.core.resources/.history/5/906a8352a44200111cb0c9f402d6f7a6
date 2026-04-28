@@ -23,18 +23,7 @@ static void vm_write_addr(uint8_t addr, bool value) {
         g_io.digital_out[addr - ADDR_OUTPUT_BASE] = value;
     }
 }
-// Read a numeric value from an address (counter count, timer elapsed, or bit value)
-static uint16_t vm_read_addr_value(uint8_t addr) {
-    if (addr >= 0x20 && addr <= 0x27) {
-        // Timer addresses — return elapsed_ms (you could /1000 if you want seconds)
-        return g_timers[addr - ADDR_TIMER_BASE].elapsed_ms;
-    } else if (addr >= 0x30 && addr <= 0x37) {
-        // Counter addresses — return current count
-        return g_counters[addr - ADDR_COUNTER_BASE].count;
-    }
-    // For digital inputs/outputs, return 0 or 1 as a number
-    return vm_read_addr(addr) ? 1 : 0;
-}
+
 vm_result_t ladder_vm_execute(const uint8_t *program, uint16_t program_len) {
     bool stack[VM_STACK_SIZE];
     int sp = -1;
@@ -85,24 +74,7 @@ vm_result_t ladder_vm_execute(const uint8_t *program, uint16_t program_len) {
             }
             continue;
         }
-        // Multi-byte opcodes: TON/CTU have operand + preset (3 bytes total)
-        if (opcode == OP_TON || opcode == OP_CTU) {
-            // ... existing code
-        }
-        // LDEQ: load HIGH if value at addr equals immediate (3 bytes after opcode)
-        if (opcode == OP_LDEQ) {
-            if (pc + 2 >= program_len) return VM_ERR_PROGRAM_TOO_LONG;
 
-            uint8_t addr      = program[pc++];
-            uint16_t compare  = program[pc++];
-            compare |= ((uint16_t)program[pc++]) << 8;
-
-            uint16_t actual = vm_read_addr_value(addr);
-
-            if (sp + 1 >= VM_STACK_SIZE) return VM_ERR_STACK_OVERFLOW;
-            stack[++sp] = (actual == compare);
-            continue;
-        }
         // Single-operand opcodes (1 byte address after opcode)
         if (pc >= program_len) return VM_ERR_PROGRAM_TOO_LONG;
         uint8_t addr = program[pc++];
@@ -142,17 +114,14 @@ vm_result_t ladder_vm_execute(const uint8_t *program, uint16_t program_len) {
                 break;
 
             case OP_RST:
-                // Conditional reset: only reset if stack top is HIGH
-                if (sp >= 0 && stack[sp]) {
-                    if (addr >= 0x20 && addr <= 0x27) {
-                        plc_timer_t *t = &g_timers[addr - ADDR_TIMER_BASE];
-                        t->elapsed_ms = 0;
-                        t->output = false;
-                    } else if (addr >= 0x30 && addr <= 0x37) {
-                        plc_counter_t *c = &g_counters[addr - ADDR_COUNTER_BASE];
-                        c->count = 0;
-                        c->output = false;
-                    }
+                if (addr >= 0x20 && addr <= 0x27) {
+                    plc_timer_t *t = &g_timers[addr - ADDR_TIMER_BASE];
+                    t->elapsed_ms = 0;
+                    t->output = false;
+                } else if (addr >= 0x30 && addr <= 0x37) {
+                    plc_counter_t *c = &g_counters[addr - ADDR_COUNTER_BASE];
+                    c->count = 0;
+                    c->output = false;
                 }
                 break;
 

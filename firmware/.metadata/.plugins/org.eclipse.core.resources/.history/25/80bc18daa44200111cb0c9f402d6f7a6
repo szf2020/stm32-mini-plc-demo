@@ -90,7 +90,6 @@ static void process_command(const char *cmd) {
         printf("  load echo       - run echo (input -> output)\r\n");
         printf("  load not        - run NOT gate\r\n");
         printf("  load multi      - 4-channel echo (each input drives matching output)\r\n");
-        printf("  load chase      - LED chase (press I0 to advance)\r\n");
         printf("  load counter    - run 5-press counter\r\n");
         printf("  reset           - reset all I/O\r\n");
     }

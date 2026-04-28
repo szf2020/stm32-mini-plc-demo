@@ -89,8 +89,6 @@ static void process_command(const char *cmd) {
         printf("  load timer      - run 2-second timer demo\r\n");
         printf("  load echo       - run echo (input -> output)\r\n");
         printf("  load not        - run NOT gate\r\n");
-        printf("  load multi      - 4-channel echo (each input drives matching output)\r\n");
-        printf("  load chase      - LED chase (press I0 to advance)\r\n");
         printf("  load counter    - run 5-press counter\r\n");
         printf("  reset           - reset all I/O\r\n");
     }
@@ -127,11 +125,6 @@ static void process_command(const char *cmd) {
         active_program = multi_echo_program;
         active_program_len = MULTI_ECHO_PROGRAM_LEN;
         printf("\r\nLoaded: multi-channel echo (I0->Q0, I1->Q1, I2->Q2, I3->Q3)\r\n");
-    }
-    else if (strcmp(cmd, "load chase") == 0) {
-        active_program = led_chase_program;
-        active_program_len = LED_CHASE_PROGRAM_LEN;
-        printf("\r\nLoaded: LED chase\r\n");
     }
     else if (strcmp(cmd, "load not") == 0) {
         active_program = not_gate_program;

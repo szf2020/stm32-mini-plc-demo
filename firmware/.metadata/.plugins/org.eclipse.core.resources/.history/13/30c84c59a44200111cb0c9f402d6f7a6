@@ -18,7 +18,6 @@
 #define OP_CTU   0x21    // Counter Up:     CTU C0, 10
 #define OP_LDT   0x22    // Load timer output:   LDT T0 (read timer.output)
 #define OP_LDC   0x23    // Load counter output: LDC C0 (read counter.output)
-#define OP_LDEQ  0x24    // Load equal: push HIGH if value at addr == immediate
 #define OP_RST   0x30    // Reset timer or counter
 
 // Timer/Counter address space

@@ -1,3 +1,4 @@
 ../Src/ladder_vm.c:8:13:vm_read_addr	8
 ../Src/ladder_vm.c:21:13:vm_write_addr	3
-../Src/ladder_vm.c:27:13:ladder_vm_execute	45
+../Src/ladder_vm.c:27:17:vm_read_addr_value	5
+../Src/ladder_vm.c:38:13:ladder_vm_execute	50

@@ -65,47 +65,5 @@ static const uint8_t multi_echo_program[] = {
     OP_END
 };
 #define MULTI_ECHO_PROGRAM_LEN (sizeof(multi_echo_program))
-//#define MULTI_ECHO_PROGRAM_LEN (sizeof(multi_echo_program))
-// LED chase: button I0 advances which LED is lit
-// Press 1: LED1 ON
-// Press 2: LED2 ON
-// Press 3: LED3 ON
-// Press 4: LED4 ON
-// Press 5: LED1 ON (cycle)
-//
-// Implementation: counter C0 increments on I0 rising edge,
-// resets when count reaches 4 (so values are 0..3).
-// LDEQ decodes the count to which LED to turn on.
-//
-// Note: we use preset 4 so the counter "wraps" after 4 presses
-// (CTU output goes HIGH at count >= 4, which we use as reset trigger)
 
-static const uint8_t led_chase_program[] = {
-    // Increment C0 on each I0 press, with preset = 4 (resets at 4)
-    OP_LD,   0x00,
-    OP_CTU,  0x30, 0x04, 0x00,    // C0 preset 4
-
-    // When C0 reaches 4, reset it (so count cycles 0..3)
-    OP_LDC,  0x30,                // load C0 output (HIGH at count >= 4)
-    OP_RST,  0x30,                // reset C0 if HIGH
-
-    // Q0 = (count == 0)
-    OP_LDEQ, 0x30, 0x00, 0x00,
-    OP_OUT,  0x10,
-
-    // Q1 = (count == 1)
-    OP_LDEQ, 0x30, 0x01, 0x00,
-    OP_OUT,  0x11,
-
-    // Q2 = (count == 2)
-    OP_LDEQ, 0x30, 0x02, 0x00,
-    OP_OUT,  0x12,
-
-    // Q3 = (count == 3)
-    OP_LDEQ, 0x30, 0x03, 0x00,
-    OP_OUT,  0x13,
-
-    OP_END
-};
-#define LED_CHASE_PROGRAM_LEN (sizeof(led_chase_program))
 #endif /* INC_LADDER_PROGRAMS_H_ */
