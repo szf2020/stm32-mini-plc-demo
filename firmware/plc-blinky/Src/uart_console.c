@@ -6,7 +6,7 @@
 #include "ladder_programs.h"
 #include <stdio.h>
 #include <string.h>
-
+#include <stdlib.h>   // for atoi
 extern UART_HandleTypeDef huart1;
 
 #define RX_BUFFER_SIZE 64
@@ -19,6 +19,21 @@ static uint8_t rx_byte;
 // Currently active program — defaults to motor
 static const uint8_t *active_program = motor_start_stop_program;
 static uint16_t active_program_len = MOTOR_PROGRAM_LEN;
+
+// Buffer for uploaded ladder programs (received over UART)
+#define UPLOADED_PROGRAM_MAX_SIZE 256
+static uint8_t uploaded_program[UPLOADED_PROGRAM_MAX_SIZE];
+static uint16_t uploaded_program_len = 0;
+
+// Upload state machine
+typedef enum {
+    UPLOAD_IDLE,            // not in upload mode
+    UPLOAD_RECEIVING_BYTES  // collecting raw bytes after UPLOAD command
+} upload_state_t;
+
+static upload_state_t upload_state = UPLOAD_IDLE;
+static uint16_t upload_expected = 0;
+static uint16_t upload_received = 0;
 
 // printf redirect — sends each character via UART
 int __io_putchar(int ch) {
@@ -47,27 +62,38 @@ void uart_console_init(void) {
 
 // Called inside the UART RX interrupt (via HAL_UART_RxCpltCallback)
 void uart_console_handle_rx(uint8_t byte) {
+    // If we're in upload-bytes mode, treat this byte as raw program data
+    if (upload_state == UPLOAD_RECEIVING_BYTES) {
+        if (upload_received < upload_expected
+            && upload_received < UPLOADED_PROGRAM_MAX_SIZE) {
+            uploaded_program[upload_received++] = byte;
+        }
+        if (upload_received >= upload_expected) {
+            uploaded_program_len = upload_received;
+            upload_state = UPLOAD_IDLE;
+            // Tell PC we got it
+            printf("OK %u\r\n", (unsigned)upload_received);
+            printf("> ");
+        }
+        return;  // do NOT echo or treat as command
+    }
+
+    // Normal command-line mode
     if (cmd_ready) return;
 
-    // Echo the typed character back to terminal (so user can see typing)
     HAL_UART_Transmit(&huart1, &byte, 1, HAL_MAX_DELAY);
 
     if (byte == '\r' || byte == '\n') {
-        // Send line break for cleaner display
         uint8_t lf = '\n';
         HAL_UART_Transmit(&huart1, &lf, 1, HAL_MAX_DELAY);
         if (rx_index > 0) {
             rx_buffer[rx_index] = '\0';
             cmd_ready = 1;
         } else {
-            // Empty line, just print prompt again
             printf("> ");
         }
     } else if (byte == 0x08 || byte == 0x7F) {
-        // Backspace
-        if (rx_index > 0) {
-            rx_index--;
-        }
+        if (rx_index > 0) rx_index--;
     } else if (rx_index < RX_BUFFER_SIZE - 1) {
         rx_buffer[rx_index++] = byte;
     }
@@ -92,6 +118,9 @@ static void process_command(const char *cmd) {
         printf("  load multi      - 4-channel echo (each input drives matching output)\r\n");
         printf("  load chase      - LED chase (press I0 to advance)\r\n");
         printf("  load counter    - run 5-press counter\r\n");
+        printf("  upload N        - upload N bytes of bytecode (binary)\r\n");
+        printf("  run             - switch to last uploaded program\r\n");
+        printf("  program         - dump uploaded program as hex\r\n");
         printf("  reset           - reset all I/O\r\n");
     }
     else if (strcmp(cmd, "status") == 0) {
@@ -149,6 +178,41 @@ static void process_command(const char *cmd) {
         }
         printf("\r\nI/O reset.\r\n");
     }
+    else if (strncmp(cmd, "upload ", 7) == 0) {
+            // Parse the byte count from "upload N"
+            int n = atoi(cmd + 7);
+            if (n <= 0 || n > UPLOADED_PROGRAM_MAX_SIZE) {
+                printf("\r\nERROR: invalid size (max %d)\r\n",
+                       UPLOADED_PROGRAM_MAX_SIZE);
+                return;
+            }
+            upload_expected = (uint16_t)n;
+            upload_received = 0;
+            upload_state = UPLOAD_RECEIVING_BYTES;
+            printf("\r\nREADY\r\n");
+            // Note: we do NOT print "> " here because the next bytes
+            // are raw bytecode, not a command line
+        }
+        else if (strcmp(cmd, "run") == 0) {
+            if (uploaded_program_len == 0) {
+                printf("\r\nERROR: no program uploaded yet\r\n");
+            } else {
+                active_program = uploaded_program;
+                active_program_len = uploaded_program_len;
+                printf("\r\nRUNNING %u-byte program\r\n",
+                       (unsigned)uploaded_program_len);
+            }
+        }
+        else if (strcmp(cmd, "program") == 0) {
+            // Print the currently uploaded program as hex (for debugging)
+            printf("\r\nUploaded program (%u bytes):\r\n",
+                   (unsigned)uploaded_program_len);
+            for (uint16_t i = 0; i < uploaded_program_len; i++) {
+                printf("%02X ", uploaded_program[i]);
+                if ((i + 1) % 8 == 0) printf("\r\n");
+            }
+            printf("\r\n");
+        }
     else if (strlen(cmd) > 0) {
         printf("\r\nUnknown: '%s' (try 'help')\r\n", cmd);
     }

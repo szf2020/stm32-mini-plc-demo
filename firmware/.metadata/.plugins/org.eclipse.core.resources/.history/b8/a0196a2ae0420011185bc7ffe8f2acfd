@@ -1,0 +1,233 @@
+#include "uart_console.h"
+#include "main.h"
+#include "io_image.h"
+#include "scan_engine.h"
+#include "ladder_vm.h"
+#include "ladder_programs.h"
+#include <stdio.h>
+#include <string.h>
+
+extern UART_HandleTypeDef huart1;
+
+#define RX_BUFFER_SIZE 64
+
+static char rx_buffer[RX_BUFFER_SIZE];
+static volatile uint16_t rx_index = 0;
+static volatile uint8_t  cmd_ready = 0;
+static uint8_t rx_byte;
+
+// Currently active program — defaults to motor
+static const uint8_t *active_program = motor_start_stop_program;
+static uint16_t active_program_len = MOTOR_PROGRAM_LEN;
+
+// Buffer for uploaded ladder programs (received over UART)
+#define UPLOADED_PROGRAM_MAX_SIZE 256
+static uint8_t uploaded_program[UPLOADED_PROGRAM_MAX_SIZE];
+static uint16_t uploaded_program_len = 0;
+
+// Upload state machine
+typedef enum {
+    UPLOAD_IDLE,            // not in upload mode
+    UPLOAD_RECEIVING_BYTES  // collecting raw bytes after UPLOAD command
+} upload_state_t;
+
+static upload_state_t upload_state = UPLOAD_IDLE;
+static uint16_t upload_expected = 0;
+static uint16_t upload_received = 0;
+
+// printf redirect — sends each character via UART
+int __io_putchar(int ch) {
+    HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+    return ch;
+}
+
+static void print_banner(void) {
+    printf("\r\n");
+    printf("====================================\r\n");
+    printf("  STM32 Mini PLC - UART Console\r\n");
+    printf("====================================\r\n");
+    printf("Type 'help' for commands.\r\n");
+    printf("> ");
+}
+
+void uart_console_init(void) {
+    rx_index = 0;
+    cmd_ready = 0;
+
+    // Start single-byte receive in interrupt mode
+    HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
+
+    print_banner();
+}
+
+// Called inside the UART RX interrupt (via HAL_UART_RxCpltCallback)
+void uart_console_handle_rx(uint8_t byte) {
+    // If we're in upload-bytes mode, treat this byte as raw program data
+    if (upload_state == UPLOAD_RECEIVING_BYTES) {
+        if (upload_received < upload_expected
+            && upload_received < UPLOADED_PROGRAM_MAX_SIZE) {
+            uploaded_program[upload_received++] = byte;
+        }
+        if (upload_received >= upload_expected) {
+            uploaded_program_len = upload_received;
+            upload_state = UPLOAD_IDLE;
+            // Tell PC we got it
+            printf("OK %u\r\n", (unsigned)upload_received);
+            printf("> ");
+        }
+        return;  // do NOT echo or treat as command
+    }
+
+    // Normal command-line mode
+    if (cmd_ready) return;
+
+    HAL_UART_Transmit(&huart1, &byte, 1, HAL_MAX_DELAY);
+
+    if (byte == '\r' || byte == '\n') {
+        uint8_t lf = '\n';
+        HAL_UART_Transmit(&huart1, &lf, 1, HAL_MAX_DELAY);
+        if (rx_index > 0) {
+            rx_buffer[rx_index] = '\0';
+            cmd_ready = 1;
+        } else {
+            printf("> ");
+        }
+    } else if (byte == 0x08 || byte == 0x7F) {
+        if (rx_index > 0) rx_index--;
+    } else if (rx_index < RX_BUFFER_SIZE - 1) {
+        rx_buffer[rx_index++] = byte;
+    }
+}
+
+// Wrapper called from HAL_UART_RxCpltCallback in main.c
+void uart_console_on_rx(void) {
+    uart_console_handle_rx(rx_byte);
+    // Re-arm the receive
+    HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
+}
+
+static void process_command(const char *cmd) {
+    if (strcmp(cmd, "help") == 0) {
+        printf("\r\nCommands:\r\n");
+        printf("  help            - this message\r\n");
+        printf("  status          - show PLC state\r\n");
+        printf("  load motor      - run motor start/stop\r\n");
+        printf("  load timer      - run 2-second timer demo\r\n");
+        printf("  load echo       - run echo (input -> output)\r\n");
+        printf("  load not        - run NOT gate\r\n");
+        printf("  load multi      - 4-channel echo (each input drives matching output)\r\n");
+        printf("  load chase      - LED chase (press I0 to advance)\r\n");
+        printf("  load counter    - run 5-press counter\r\n");
+        printf("  reset           - reset all I/O\r\n");
+    }
+    else if (strcmp(cmd, "status") == 0) {
+        printf("\r\nPLC Status:\r\n");
+        printf("  Inputs:  ");
+        for (int i = 0; i < 8; i++) {
+            printf("I%d=%d ", i, g_io.digital_in[i]);
+        }
+        printf("\r\n");
+        printf("  Outputs: ");
+        for (int i = 0; i < 4; i++) {
+            printf("Q%d=%d ", i, g_io.digital_out[i]);
+        }
+        printf("\r\n");
+        printf("  Scan count: %lu\r\n", scan_get_count());
+    }
+    else if (strcmp(cmd, "load motor") == 0) {
+        active_program = motor_start_stop_program;
+        active_program_len = MOTOR_PROGRAM_LEN;
+        printf("\r\nLoaded: motor start/stop\r\n");
+    }
+    else if (strcmp(cmd, "load timer") == 0) {
+        active_program = timer_demo_program;
+        active_program_len = TIMER_DEMO_PROGRAM_LEN;
+        printf("\r\nLoaded: 2-second timer\r\n");
+    }
+    else if (strcmp(cmd, "load echo") == 0) {
+        active_program = echo_program;
+        active_program_len = ECHO_PROGRAM_LEN;
+        printf("\r\nLoaded: echo\r\n");
+    }
+    else if (strcmp(cmd, "load multi") == 0) {
+        active_program = multi_echo_program;
+        active_program_len = MULTI_ECHO_PROGRAM_LEN;
+        printf("\r\nLoaded: multi-channel echo (I0->Q0, I1->Q1, I2->Q2, I3->Q3)\r\n");
+    }
+    else if (strcmp(cmd, "load chase") == 0) {
+        active_program = led_chase_program;
+        active_program_len = LED_CHASE_PROGRAM_LEN;
+        printf("\r\nLoaded: LED chase\r\n");
+    }
+    else if (strcmp(cmd, "load not") == 0) {
+        active_program = not_gate_program;
+        active_program_len = NOT_GATE_PROGRAM_LEN;
+        printf("\r\nLoaded: NOT gate\r\n");
+    }
+    else if (strcmp(cmd, "load counter") == 0) {
+        active_program = counter_demo_program;
+        active_program_len = COUNTER_DEMO_PROGRAM_LEN;
+        printf("\r\nLoaded: counter\r\n");
+    }
+    else if (strcmp(cmd, "reset") == 0) {
+        for (int i = 0; i < PLC_DIGITAL_OUTPUT_COUNT; i++) {
+            g_io.digital_out[i] = 0;
+        }
+        printf("\r\nI/O reset.\r\n");
+    }
+    else if (strncmp(cmd, "upload ", 7) == 0) {
+            // Parse the byte count from "upload N"
+            int n = atoi(cmd + 7);
+            if (n <= 0 || n > UPLOADED_PROGRAM_MAX_SIZE) {
+                printf("\r\nERROR: invalid size (max %d)\r\n",
+                       UPLOADED_PROGRAM_MAX_SIZE);
+                return;
+            }
+            upload_expected = (uint16_t)n;
+            upload_received = 0;
+            upload_state = UPLOAD_RECEIVING_BYTES;
+            printf("\r\nREADY\r\n");
+            // Note: we do NOT print "> " here because the next bytes
+            // are raw bytecode, not a command line
+        }
+        else if (strcmp(cmd, "run") == 0) {
+            if (uploaded_program_len == 0) {
+                printf("\r\nERROR: no program uploaded yet\r\n");
+            } else {
+                active_program = uploaded_program;
+                active_program_len = uploaded_program_len;
+                printf("\r\nRUNNING %u-byte program\r\n",
+                       (unsigned)uploaded_program_len);
+            }
+        }
+        else if (strcmp(cmd, "program") == 0) {
+            // Print the currently uploaded program as hex (for debugging)
+            printf("\r\nUploaded program (%u bytes):\r\n",
+                   (unsigned)uploaded_program_len);
+            for (uint16_t i = 0; i < uploaded_program_len; i++) {
+                printf("%02X ", uploaded_program[i]);
+                if ((i + 1) % 8 == 0) printf("\r\n");
+            }
+            printf("\r\n");
+        }
+    else if (strlen(cmd) > 0) {
+        printf("\r\nUnknown: '%s' (try 'help')\r\n", cmd);
+    }
+}
+
+void uart_console_poll(void) {
+    if (cmd_ready) {
+        process_command(rx_buffer);
+        rx_index = 0;
+        cmd_ready = 0;
+        printf("> ");
+    }
+}
+
+const uint8_t *uart_get_active_program(void) {
+    return active_program;
+}
+
+uint16_t uart_get_active_program_len(void) {
+    return active_program_len;
+}
