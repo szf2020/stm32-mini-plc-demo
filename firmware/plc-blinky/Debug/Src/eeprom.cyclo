@@ -1,0 +1,12 @@
+../Src/eeprom.c:13:6:eeprom_init	2
+../Src/eeprom.c:21:6:eeprom_read_byte	1
+../Src/eeprom.c:27:6:eeprom_write_byte	2
+../Src/eeprom.c:37:6:eeprom_read_block	2
+../Src/eeprom.c:44:6:eeprom_write_block	3
+../Src/eeprom.c:54:6:eeprom_test	7
+../Src/eeprom.c:69:17:slot_address	1
+../Src/eeprom.c:74:13:read_slot_header	2
+../Src/eeprom.c:79:6:eeprom_save_slot	5
+../Src/eeprom.c:98:6:eeprom_slot_is_valid	4
+../Src/eeprom.c:104:10:eeprom_slot_length	4
+../Src/eeprom.c:111:6:eeprom_load_slot	5

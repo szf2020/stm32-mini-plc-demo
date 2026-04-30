@@ -6,7 +6,8 @@
 #include "ladder_programs.h"
 #include <stdio.h>
 #include <string.h>
-#include <stdlib.h>   // for atoi
+#include <stdlib.h>
+#include "eeprom.h"
 extern UART_HandleTypeDef huart1;
 
 #define RX_BUFFER_SIZE 64
@@ -121,6 +122,10 @@ static void process_command(const char *cmd) {
         printf("  upload N        - upload N bytes of bytecode (binary)\r\n");
         printf("  run             - switch to last uploaded program\r\n");
         printf("  program         - dump uploaded program as hex\r\n");
+        printf("  eetest          - test EEPROM read/write\r\n");
+        printf("  save N          - save current program to EEPROM slot N (0-3)\r\n");
+        printf("  loadslot N      - load EEPROM slot N as active program\r\n");
+        printf("  slots           - list which slots have programs\r\n");
         printf("  reset           - reset all I/O\r\n");
     }
     else if (strcmp(cmd, "status") == 0) {
@@ -213,7 +218,62 @@ static void process_command(const char *cmd) {
             }
             printf("\r\n");
         }
-    else if (strlen(cmd) > 0) {
+        else if (strcmp(cmd, "eetest") == 0) {
+                printf("\r\nTesting EEPROM...\r\n");
+                if (eeprom_test()) {
+                    printf("EEPROM OK\r\n");
+                } else {
+                    printf("EEPROM FAIL — check wiring\r\n");
+                }
+            }
+        else if (strncmp(cmd, "save ", 5) == 0) {
+                int slot = atoi(cmd + 5);
+                if (slot < 0 || slot >= EEPROM_SLOT_COUNT) {
+                    printf("\r\nERROR: slot must be 0-%d\r\n", EEPROM_SLOT_COUNT - 1);
+                    return;
+                }
+                if (uploaded_program_len == 0) {
+                    printf("\r\nERROR: no program uploaded yet\r\n");
+                    return;
+                }
+                printf("\r\nSaving %u bytes to slot %d...\r\n",
+                       (unsigned)uploaded_program_len, slot);
+                if (eeprom_save_slot(slot, uploaded_program, uploaded_program_len)) {
+                    printf("OK saved\r\n");
+                } else {
+                    printf("ERROR save failed\r\n");
+                }
+            }
+            else if (strncmp(cmd, "loadslot ", 9) == 0) {
+                int slot = atoi(cmd + 9);
+                if (slot < 0 || slot >= EEPROM_SLOT_COUNT) {
+                    printf("\r\nERROR: slot must be 0-%d\r\n", EEPROM_SLOT_COUNT - 1);
+                    return;
+                }
+                uint16_t len;
+                if (!eeprom_load_slot((uint8_t)slot, uploaded_program, &len,
+                                      UPLOADED_PROGRAM_MAX_SIZE)) {
+                    printf("\r\nERROR slot %d empty or invalid\r\n", slot);
+                    return;
+                }
+                uploaded_program_len = len;
+                active_program = uploaded_program;
+                active_program_len = uploaded_program_len;
+                printf("\r\nLoaded %u bytes from slot %d, running\r\n",
+                       (unsigned)len, slot);
+            }
+            else if (strcmp(cmd, "slots") == 0) {
+                printf("\r\nSlot status:\r\n");
+                for (uint8_t i = 0; i < EEPROM_SLOT_COUNT; i++) {
+                    if (eeprom_slot_is_valid(i)) {
+                        uint16_t len = eeprom_slot_length(i);
+                        printf("  Slot %u: %u bytes\r\n", i, (unsigned)len);
+                    } else {
+                        printf("  Slot %u: empty\r\n", i);
+                    }
+                }
+            }
+        else if (strlen(cmd) > 0) {
         printf("\r\nUnknown: '%s' (try 'help')\r\n", cmd);
     }
 }
