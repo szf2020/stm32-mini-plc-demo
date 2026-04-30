@@ -10,3 +10,6 @@
 ../Src/eeprom.c:98:6:eeprom_slot_is_valid	4
 ../Src/eeprom.c:104:10:eeprom_slot_length	4
 ../Src/eeprom.c:111:6:eeprom_load_slot	5
+../Src/eeprom.c:121:6:eeprom_set_boot_slot	2
+../Src/eeprom.c:131:6:eeprom_get_boot_slot	5
+../Src/eeprom.c:140:6:eeprom_clear_boot_slot	1

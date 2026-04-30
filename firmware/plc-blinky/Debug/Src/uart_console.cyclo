@@ -1,9 +1,9 @@
 ../Src/uart_console.c:40:5:__io_putchar	1
 ../Src/uart_console.c:45:13:print_banner	1
-../Src/uart_console.c:54:6:uart_console_init	1
-../Src/uart_console.c:65:6:uart_console_handle_rx	13
-../Src/uart_console.c:104:6:uart_console_on_rx	1
-../Src/uart_console.c:110:13:process_command	37
-../Src/uart_console.c:281:6:uart_console_poll	2
-../Src/uart_console.c:290:16:uart_get_active_program	1
-../Src/uart_console.c:294:10:uart_get_active_program_len	1
+../Src/uart_console.c:54:6:uart_console_init	5
+../Src/uart_console.c:87:6:uart_console_handle_rx	13
+../Src/uart_console.c:126:6:uart_console_on_rx	1
+../Src/uart_console.c:132:13:process_command	47
+../Src/uart_console.c:338:6:uart_console_poll	2
+../Src/uart_console.c:347:16:uart_get_active_program	1
+../Src/uart_console.c:351:10:uart_get_active_program_len	1

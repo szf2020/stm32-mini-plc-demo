@@ -118,26 +118,3 @@ bool eeprom_load_slot(uint8_t slot, uint8_t *data, uint16_t *len_out, uint16_t m
     *len_out = len;
     return true;
 }
-bool eeprom_set_boot_slot(uint8_t slot) {
-    if (slot >= EEPROM_SLOT_COUNT) return false;
-    uint8_t cfg[4];
-    cfg[0] = EEPROM_BOOTCFG_MAGIC_1;
-    cfg[1] = EEPROM_BOOTCFG_MAGIC_2;
-    cfg[2] = slot;
-    cfg[3] = 0xFF;
-    return eeprom_write_block(EEPROM_BOOTCFG_ADDR, cfg, 4);
-}
-
-bool eeprom_get_boot_slot(uint8_t *slot_out) {
-    uint8_t cfg[4];
-    if (!eeprom_read_block(EEPROM_BOOTCFG_ADDR, cfg, 4)) return false;
-    if (cfg[0] != EEPROM_BOOTCFG_MAGIC_1 || cfg[1] != EEPROM_BOOTCFG_MAGIC_2) return false;
-    if (cfg[2] >= EEPROM_SLOT_COUNT) return false;
-    *slot_out = cfg[2];
-    return true;
-}
-
-bool eeprom_clear_boot_slot(void) {
-    uint8_t cfg[4] = { 0xFF, 0xFF, 0xFF, 0xFF };
-    return eeprom_write_block(EEPROM_BOOTCFG_ADDR, cfg, 4);
-}

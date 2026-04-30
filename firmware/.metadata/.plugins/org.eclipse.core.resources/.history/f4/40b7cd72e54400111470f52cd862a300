@@ -54,35 +54,13 @@ static void print_banner(void) {
 void uart_console_init(void) {
     rx_index = 0;
     cmd_ready = 0;
+
+    // Start single-byte receive in interrupt mode
     HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
 
-    // Try to auto-load a program from EEPROM
-    uint8_t boot_slot;
-    if (eeprom_get_boot_slot(&boot_slot)) {
-        uint16_t len;
-        if (eeprom_load_slot(boot_slot, uploaded_program, &len,
-                             UPLOADED_PROGRAM_MAX_SIZE)) {
-            uploaded_program_len = len;
-            active_program = uploaded_program;
-            active_program_len = uploaded_program_len;
-            // Banner will mention this
-        }
-    }
-
     print_banner();
-
-    // Print boot status after banner
-    uint8_t boot_slot2;
-    if (eeprom_get_boot_slot(&boot_slot2)) {
-        if (uploaded_program_len > 0) {
-            printf("Auto-loaded slot %u (%u bytes)\r\n",
-                   boot_slot2, (unsigned)uploaded_program_len);
-        } else {
-            printf("Auto-boot slot %u failed to load\r\n", boot_slot2);
-        }
-    }
-    printf("> ");
 }
+
 // Called inside the UART RX interrupt (via HAL_UART_RxCpltCallback)
 void uart_console_handle_rx(uint8_t byte) {
     // If we're in upload-bytes mode, treat this byte as raw program data
@@ -148,8 +126,6 @@ static void process_command(const char *cmd) {
         printf("  save N          - save current program to EEPROM slot N (0-3)\r\n");
         printf("  loadslot N      - load EEPROM slot N as active program\r\n");
         printf("  slots           - list which slots have programs\r\n");
-        printf("  boot N          - set EEPROM slot N to load at startup (or 'off')\r\n");
-        printf("  bootinfo        - show current auto-boot setting\r\n");
         printf("  reset           - reset all I/O\r\n");
     }
     else if (strcmp(cmd, "status") == 0) {
@@ -297,39 +273,6 @@ static void process_command(const char *cmd) {
                     }
                 }
             }
-            else if (strncmp(cmd, "boot ", 5) == 0) {
-                    if (strcmp(cmd + 5, "off") == 0 || strcmp(cmd + 5, "none") == 0) {
-                        if (eeprom_clear_boot_slot()) {
-                            printf("\r\nAuto-boot disabled\r\n");
-                        } else {
-                            printf("\r\nERROR clear failed\r\n");
-                        }
-                    } else {
-                        int slot = atoi(cmd + 5);
-                        if (slot < 0 || slot >= EEPROM_SLOT_COUNT) {
-                            printf("\r\nERROR: slot must be 0-%d (or 'off')\r\n",
-                                   EEPROM_SLOT_COUNT - 1);
-                            return;
-                        }
-                        if (!eeprom_slot_is_valid((uint8_t)slot)) {
-                            printf("\r\nERROR: slot %d is empty, save a program first\r\n", slot);
-                            return;
-                        }
-                        if (eeprom_set_boot_slot((uint8_t)slot)) {
-                            printf("\r\nAuto-boot set to slot %d\r\n", slot);
-                        } else {
-                            printf("\r\nERROR set failed\r\n");
-                        }
-                    }
-                }
-                else if (strcmp(cmd, "bootinfo") == 0) {
-                    uint8_t slot;
-                    if (eeprom_get_boot_slot(&slot)) {
-                        printf("\r\nAuto-boot: slot %u\r\n", slot);
-                    } else {
-                        printf("\r\nAuto-boot: disabled (default program)\r\n");
-                    }
-                }
         else if (strlen(cmd) > 0) {
         printf("\r\nUnknown: '%s' (try 'help')\r\n", cmd);
     }

@@ -29,12 +29,4 @@ bool eeprom_save_slot(uint8_t slot, const uint8_t *data, uint16_t len);
 bool eeprom_load_slot(uint8_t slot, uint8_t *data, uint16_t *len_out, uint16_t max_len);
 bool eeprom_slot_is_valid(uint8_t slot);
 uint16_t eeprom_slot_length(uint8_t slot);  // returns 0 if invalid
-// Boot configuration
-#define EEPROM_BOOTCFG_ADDR    (EEPROM_TOTAL_SIZE - 4)   // 0x1FFC
-#define EEPROM_BOOTCFG_MAGIC_1 0xCC
-#define EEPROM_BOOTCFG_MAGIC_2 0x33
-
-bool eeprom_set_boot_slot(uint8_t slot);
-bool eeprom_get_boot_slot(uint8_t *slot_out);
-bool eeprom_clear_boot_slot(void);
 #endif /* INC_EEPROM_H_ */
