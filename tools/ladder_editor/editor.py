@@ -36,6 +36,7 @@ RUNG_TOP_OFFSET = 60
 ELEMENT_WIDTH = 80
 ELEMENT_HEIGHT = 40
 GRID_SNAP = 100
+BRANCH_OFFSET_Y = 50
 
 ELEMENT_TYPES = [
     ("Contact",       "─| |─",   "I0", "input"),
@@ -67,7 +68,6 @@ def get_addr_type(elem_type):
     return "contact"
 
 
-# Bytecode opcodes — matches ladder_vm.h on the STM32 side
 OPCODES = {
     "LD": 0x01, "LDN": 0x02, "AND": 0x03, "ANDN": 0x04,
     "OR": 0x05, "ORN": 0x06, "OUT": 0x10,
@@ -89,6 +89,16 @@ def encode_addr(addr_str):
     elif prefix == "T": return 0x20 + num
     elif prefix == "C": return 0x30 + num
     return 0
+
+
+def migrate_program(program):
+    if not isinstance(program, dict) or "rungs" not in program:
+        return {"rungs": [{"branches": [{"elements": []}]}]}
+    for rung in program["rungs"]:
+        if "branches" not in rung:
+            old_elements = rung.pop("elements", [])
+            rung["branches"] = [{"elements": old_elements}]
+    return program
 
 
 # ---------- Element Editor Dialog ----------
@@ -162,9 +172,9 @@ class LadderEditor(ctk.CTk):
         self.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
         self.minsize(900, 500)
 
-        self.serial_port = None  # pyserial Serial object
+        self.serial_port = None
         self.selected_tool = None
-        self.program = {"rungs": [{"elements": []}]}
+        self.program = {"rungs": [{"branches": [{"elements": []}]}]}
         self.current_file = None
 
         self._build_layout()
@@ -188,7 +198,7 @@ class LadderEditor(ctk.CTk):
                      font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(20, 10))
 
         ctk.CTkLabel(self.toolbox,
-                     text="Click element → click rung\nClick placed element to edit\nRight-click to delete",
+                     text="Click element → click rung\nClick placed element to edit\nRight-click to delete\nClick [+B] to add parallel branch",
                      font=ctk.CTkFont(size=10), text_color="gray", justify="left").pack(pady=(0, 20))
 
         self.tool_buttons = {}
@@ -208,11 +218,13 @@ class LadderEditor(ctk.CTk):
                       command=self._on_clear).pack(pady=2)
         ctk.CTkLabel(self.toolbox, text="").pack(pady=4)
 
-        ctk.CTkButton(self.toolbox, text="Save", width=85, height=36,
-                      command=self._on_save).pack(side="left", padx=(20, 5), pady=2)
-        ctk.CTkButton(self.toolbox, text="Load", width=85, height=36,
-                      command=self._on_load).pack(side="left", padx=2, pady=2)
-
+        save_load_frame = ctk.CTkFrame(self.toolbox, fg_color="transparent")
+        save_load_frame.pack(pady=2)
+        ctk.CTkButton(save_load_frame, text="Save", width=85, height=36,
+                      command=self._on_save).pack(side="left", padx=4)
+        ctk.CTkButton(save_load_frame, text="Load", width=85, height=36,
+                      command=self._on_load).pack(side="left", padx=4)
+        
     def _build_canvas(self):
         canvas_frame = ctk.CTkFrame(self, corner_radius=0)
         canvas_frame.grid(row=0, column=1, sticky="nsew")
@@ -260,9 +272,12 @@ class LadderEditor(ctk.CTk):
         return self.canvas.winfo_width() - RAIL_MARGIN_RIGHT
 
     def _rung_at_y(self, y):
-        for i in range(len(self.program["rungs"])):
+        for i, rung in enumerate(self.program["rungs"]):
             ry = self._rung_y(i)
-            if ry - RUNG_HEIGHT / 2 <= y <= ry + RUNG_HEIGHT / 2:
+            n_branches = len(rung["branches"])
+            bottom = ry + (n_branches - 1) * BRANCH_OFFSET_Y + 25
+            top = ry - RUNG_HEIGHT / 2
+            if top <= y <= bottom:
                 return i
         return None
 
@@ -271,11 +286,41 @@ class LadderEditor(ctk.CTk):
 
     def _find_element_at(self, x, y):
         rung_idx = self._rung_at_y(y)
-        if rung_idx is None: return None
+        if rung_idx is None:
+            return None
         rung = self.program["rungs"][rung_idx]
-        for elem_idx, elem in enumerate(rung["elements"]):
-            if abs(elem["x"] - x) < ELEMENT_HIT_RADIUS:
-                return rung_idx, elem_idx, elem
+        rung_main_y = self._rung_y(rung_idx)
+        for branch_idx, branch in enumerate(rung["branches"]):
+            if branch_idx == 0:
+                branch_y = rung_main_y
+            else:
+                branch_y = rung_main_y + branch_idx * BRANCH_OFFSET_Y
+            if abs(y - branch_y) <= 25:
+                for elem_idx, elem in enumerate(branch["elements"]):
+                    if abs(elem["x"] - x) < ELEMENT_HIT_RADIUS:
+                        return rung_idx, branch_idx, elem_idx, elem
+        return None
+
+    def _branch_at(self, rung_idx, y):
+        rung_main_y = self._rung_y(rung_idx)
+        rung = self.program["rungs"][rung_idx]
+        best_branch = 0
+        best_dist = abs(y - rung_main_y)
+        for branch_idx in range(1, len(rung["branches"])):
+            branch_y = rung_main_y + branch_idx * BRANCH_OFFSET_Y
+            d = abs(y - branch_y)
+            if d < best_dist:
+                best_dist = d
+                best_branch = branch_idx
+        return best_branch
+
+    def _check_add_branch_click(self, x, y):
+        for rung_idx in range(len(self.program["rungs"])):
+            ry = self._rung_y(rung_idx)
+            bx = RAIL_X_LEFT - 50
+            by = ry + 5
+            if bx - 18 <= x <= bx + 18 and by - 12 <= y <= by + 12:
+                return rung_idx
         return None
 
     # ============================================================
@@ -296,7 +341,11 @@ class LadderEditor(ctk.CTk):
         for rung_idx, rung in enumerate(self.program["rungs"]):
             self._draw_rung(rung_idx, rung)
 
-        if all(len(r["elements"]) == 0 for r in self.program["rungs"]):
+        all_empty = all(
+            all(len(b["elements"]) == 0 for b in r["branches"])
+            for r in self.program["rungs"]
+        )
+        if all_empty:
             self.canvas.create_text(w / 2, h / 2,
                                     text="Pick an element from the toolbox, then click a rung",
                                     fill="gray", font=("Arial", 12))
@@ -308,8 +357,27 @@ class LadderEditor(ctk.CTk):
         self.canvas.create_line(RAIL_X_LEFT, y, rail_right, y, fill=CANVAS_RAIL, width=2)
         self.canvas.create_text(40, y, text=f"R{rung_idx}", fill="gray", font=("Arial", 10))
 
-        for elem in rung["elements"]:
-            self._draw_element(elem, y)
+        bx = RAIL_X_LEFT - 50
+        by = y + 5
+        self.canvas.create_rectangle(bx - 18, by - 12, bx + 18, by + 12,
+                                     fill="#2a4a7a", outline="#5fa8d3", width=1)
+        self.canvas.create_text(bx, by, text="+B", fill="white", font=("Arial", 9, "bold"))
+
+        for branch_idx, branch in enumerate(rung["branches"]):
+            if branch_idx == 0:
+                branch_y = y
+            else:
+                branch_y = y + branch_idx * BRANCH_OFFSET_Y
+                self.canvas.create_line(RAIL_X_LEFT, branch_y, rail_right, branch_y,
+                                        fill="#5fa8d3", width=1, dash=(4, 2))
+                self.canvas.create_line(RAIL_X_LEFT, y, RAIL_X_LEFT, branch_y,
+                                        fill="#5fa8d3", width=1)
+                self.canvas.create_line(rail_right, y, rail_right, branch_y,
+                                        fill="#5fa8d3", width=1)
+                self.canvas.create_text(60, branch_y, text=f"B{branch_idx}",
+                                        fill="#5fa8d3", font=("Arial", 9))
+            for elem in branch["elements"]:
+                self._draw_element(elem, branch_y)
 
     def _draw_element(self, elem, y):
         x = elem["x"]
@@ -348,10 +416,17 @@ class LadderEditor(ctk.CTk):
     # Canvas interactions
     # ============================================================
     def _on_canvas_click(self, event):
+        branch_rung = self._check_add_branch_click(event.x, event.y)
+        if branch_rung is not None:
+            self.program["rungs"][branch_rung]["branches"].append({"elements": []})
+            self.status_label.configure(text=f"Added branch to rung {branch_rung}")
+            self._redraw_canvas()
+            return
+
         hit = self._find_element_at(event.x, event.y)
         if hit is not None:
-            rung_idx, elem_idx, elem = hit
-            self._open_element_editor(rung_idx, elem_idx, elem)
+            rung_idx, branch_idx, elem_idx, elem = hit
+            self._open_element_editor(rung_idx, branch_idx, elem_idx, elem)
             return
 
         if not self.selected_tool:
@@ -368,6 +443,8 @@ class LadderEditor(ctk.CTk):
             self.status_label.configure(text="Click between the rails")
             return
 
+        branch_idx = self._branch_at(rung_idx, event.y)
+
         x = self._snap_x(event.x)
         default_addr = next((addr for n, _, addr, _ in ELEMENT_TYPES if n == self.selected_tool), "?")
 
@@ -377,28 +454,31 @@ class LadderEditor(ctk.CTk):
         elif self.selected_tool == "Counter (CTU)":
             new_element["preset"] = 5
 
-        self.program["rungs"][rung_idx]["elements"].append(new_element)
-        self.status_label.configure(text=f"Placed {self.selected_tool} on rung {rung_idx}")
+        self.program["rungs"][rung_idx]["branches"][branch_idx]["elements"].append(new_element)
+        branch_text = f"branch {branch_idx}" if branch_idx > 0 else "main"
+        self.status_label.configure(
+            text=f"Placed {self.selected_tool} on rung {rung_idx} ({branch_text})"
+        )
         self._redraw_canvas()
 
     def _on_canvas_right_click(self, event):
         hit = self._find_element_at(event.x, event.y)
         if hit is not None:
-            rung_idx, elem_idx, elem = hit
-            self.program["rungs"][rung_idx]["elements"].pop(elem_idx)
+            rung_idx, branch_idx, elem_idx, elem = hit
+            self.program["rungs"][rung_idx]["branches"][branch_idx]["elements"].pop(elem_idx)
             self.status_label.configure(text=f"Deleted {elem['type']}")
             self._redraw_canvas()
 
-    def _open_element_editor(self, rung_idx, elem_idx, element):
+    def _open_element_editor(self, rung_idx, branch_idx, elem_idx, element):
         dialog = ElementEditorDialog(self, element)
         self.wait_window(dialog)
         if dialog.result is None: return
         action, payload = dialog.result
         if action == "update":
-            self.program["rungs"][rung_idx]["elements"][elem_idx] = payload
+            self.program["rungs"][rung_idx]["branches"][branch_idx]["elements"][elem_idx] = payload
             self.status_label.configure(text=f"Updated to {payload['addr']}")
         elif action == "delete":
-            self.program["rungs"][rung_idx]["elements"].pop(elem_idx)
+            self.program["rungs"][rung_idx]["branches"][branch_idx]["elements"].pop(elem_idx)
             self.status_label.configure(text="Deleted")
         self._redraw_canvas()
 
@@ -415,12 +495,12 @@ class LadderEditor(ctk.CTk):
         self.status_label.configure(text=f"Selected: {name} — click a rung")
 
     def _on_add_rung(self):
-        self.program["rungs"].append({"elements": []})
+        self.program["rungs"].append({"branches": [{"elements": []}]})
         self.status_label.configure(text=f"Now {len(self.program['rungs'])} rungs")
         self._redraw_canvas()
 
     def _on_clear(self):
-        self.program = {"rungs": [{"elements": []}]}
+        self.program = {"rungs": [{"branches": [{"elements": []}]}]}
         self.selected_tool = None
         for btn in self.tool_buttons.values():
             btn.configure(fg_color=("#3a7ebf", "#1f6aa5"))
@@ -451,6 +531,7 @@ class LadderEditor(ctk.CTk):
         try:
             with open(path, "r") as f:
                 self.program = json.load(f)
+            self.program = migrate_program(self.program)
             self.current_file = path
             self.title(f"STM32 Mini PLC - Ladder Editor - {os.path.basename(path)}")
             self.status_label.configure(text=f"Loaded: {os.path.basename(path)}")
@@ -459,13 +540,14 @@ class LadderEditor(ctk.CTk):
             messagebox.showerror("Load error", str(e))
 
     # ============================================================
-    # Compile diagram -> bytecode
+    # Compile diagram -> bytecode (Phase 1: only first branch)
     # ============================================================
     def compile_program(self):
         bytecode = []
 
         for rung_idx, rung in enumerate(self.program["rungs"]):
-            elements = sorted(rung["elements"], key=lambda e: e["x"])
+            branch = rung["branches"][0]
+            elements = sorted(branch["elements"], key=lambda e: e["x"])
             if not elements: continue
 
             inputs = [e for e in elements if e["type"] in ("Contact", "Not Contact")]
@@ -513,10 +595,14 @@ class LadderEditor(ctk.CTk):
             print(" ".join(f"{b:02X}" for b in chunk))
         print("=====================\n")
 
+        for i, rung in enumerate(self.program["rungs"]):
+            total = sum(len(b["elements"]) for b in rung["branches"])
+            print(f"Rung {i}: {total} elements across {len(rung['branches'])} branches")
+
         self.status_label.configure(text=f"Compiled: {len(bytecode)} bytes")
 
     # ============================================================
-    # Serial connection (real now)
+    # Serial connection
     # ============================================================
     def _refresh_com_ports(self):
         ports = [p.device for p in serial.tools.list_ports.comports()]
@@ -541,7 +627,7 @@ class LadderEditor(ctk.CTk):
 
         try:
             self.serial_port = serial.Serial(port, BAUD, timeout=2)
-            time.sleep(0.5)  # let STM32 settle
+            time.sleep(0.5)
             self.connect_btn.configure(text="Disconnect")
             self.status_label.configure(text=f"Connected to {port} @ {BAUD}")
         except Exception as e:
@@ -558,7 +644,6 @@ class LadderEditor(ctk.CTk):
             messagebox.showerror("Compile Error", error)
             return
 
-        # Run the upload sequence in a background thread so the GUI doesn't freeze
         threading.Thread(target=self._download_worker,
                          args=(bytecode,), daemon=True).start()
 
@@ -568,11 +653,9 @@ class LadderEditor(ctk.CTk):
             n = len(bytecode)
 
             self._set_status(f"Uploading {n} bytes...")
-            # Drain any pending input
             ser.reset_input_buffer()
             ser.write(f"upload {n}\r\n".encode())
 
-            # Wait for READY (up to 2 seconds)
             deadline = time.time() + 2.0
             line = b""
             while time.time() < deadline:
@@ -585,10 +668,8 @@ class LadderEditor(ctk.CTk):
                 self._set_status("ERROR: STM32 did not say READY")
                 return
 
-            # Send the raw bytecode
             ser.write(bytes(bytecode))
 
-            # Wait for OK N
             deadline = time.time() + 2.0
             line = b""
             while time.time() < deadline:
@@ -602,11 +683,8 @@ class LadderEditor(ctk.CTk):
                 return
 
             self._set_status("Bytes received. Switching to new program...")
-
-            # Send RUN
             ser.write(b"run\r\n")
 
-            # Wait for RUNNING
             deadline = time.time() + 2.0
             line = b""
             while time.time() < deadline:
@@ -626,7 +704,6 @@ class LadderEditor(ctk.CTk):
             print(f"[download] Exception: {e}")
 
     def _set_status(self, text):
-        # Schedule status update on the main GUI thread
         self.after(0, lambda: self.status_label.configure(text=text))
 
 
