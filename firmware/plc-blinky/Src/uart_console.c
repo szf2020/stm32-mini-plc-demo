@@ -150,6 +150,7 @@ static void process_command(const char *cmd) {
         printf("  slots           - list which slots have programs\r\n");
         printf("  boot N          - set EEPROM slot N to load at startup (or 'off')\r\n");
         printf("  bootinfo        - show current auto-boot setting\r\n");
+        printf("  mon             - dump I/O state (for live monitoring)\r\n");
         printf("  reset           - reset all I/O\r\n");
     }
     else if (strcmp(cmd, "status") == 0) {
@@ -330,6 +331,18 @@ static void process_command(const char *cmd) {
                         printf("\r\nAuto-boot: disabled (default program)\r\n");
                     }
                 }
+                else if (strcmp(cmd, "mon") == 0) {
+                        // Compact I/O state for live monitoring
+                        printf("\r\nMON I=");
+                        for (int i = 0; i < 8; i++) {
+                            printf("%d", g_io.digital_in[i] ? 1 : 0);
+                        }
+                        printf(" Q=");
+                        for (int i = 0; i < 4; i++) {
+                            printf("%d", g_io.digital_out[i] ? 1 : 0);
+                        }
+                        printf(" SCAN=%lu\r\n", scan_get_count());
+                    }
         else if (strlen(cmd) > 0) {
         printf("\r\nUnknown: '%s' (try 'help')\r\n", cmd);
     }

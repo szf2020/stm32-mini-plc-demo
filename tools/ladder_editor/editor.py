@@ -26,6 +26,8 @@ CANVAS_BG = "#2b2b2b"
 CANVAS_GRID = "#3a3a3a"
 CANVAS_RAIL = "#888888"
 ELEMENT_COLOR = "#5fa8d3"
+ELEMENT_ACTIVE = "#5fff5f"
+ELEMENT_INACTIVE = "#3a7ebf"
 ELEMENT_TEXT = "#ffffff"
 ELEMENT_HIT_RADIUS = 35
 
@@ -173,9 +175,16 @@ class LadderEditor(ctk.CTk):
         self.minsize(900, 500)
 
         self.serial_port = None
+        self.serial_lock = threading.Lock()
         self.selected_tool = None
         self.program = {"rungs": [{"branches": [{"elements": []}]}]}
         self.current_file = None
+
+        # Live monitoring state
+        self.live_state = {}
+        self.live_scan_count = 0
+        self.monitoring = False
+        self.monitor_thread = None
 
         self._build_layout()
         self._build_toolbox()
@@ -195,36 +204,35 @@ class LadderEditor(ctk.CTk):
         self.toolbox.grid_propagate(False)
 
         ctk.CTkLabel(self.toolbox, text="Toolbox",
-                     font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(20, 10))
+                     font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(15, 8))
 
         ctk.CTkLabel(self.toolbox,
-                     text="Click element → click rung\nClick placed element to edit\nRight-click to delete\nClick [+B] to add parallel branch",
-                     font=ctk.CTkFont(size=10), text_color="gray", justify="left").pack(pady=(0, 20))
+                     text="Click element → click rung\nClick to edit, right-click delete\nClick [+B] to add branch",
+                     font=ctk.CTkFont(size=10), text_color="gray", justify="left").pack(pady=(0, 10))
 
         self.tool_buttons = {}
         for name, symbol, default_addr, _ in ELEMENT_TYPES:
             btn = ctk.CTkButton(self.toolbox, text=f"{symbol}\n{name}",
-                                width=180, height=50,
+                                width=180, height=38,
                                 command=lambda n=name: self._select_tool(n))
-            btn.pack(pady=4)
+            btn.pack(pady=2)
             self.tool_buttons[name] = btn
 
-        ctk.CTkLabel(self.toolbox, text="").pack(pady=4)
-        ctk.CTkButton(self.toolbox, text="+ Add Rung", width=180, height=36,
+        ctk.CTkLabel(self.toolbox, text="").pack(pady=2)
+        ctk.CTkButton(self.toolbox, text="+ Add Rung", width=180, height=32,
                       fg_color="#2a7a2a", hover_color="#1f5f1f",
                       command=self._on_add_rung).pack(pady=2)
-        ctk.CTkButton(self.toolbox, text="Clear All", width=180, height=36,
+        ctk.CTkButton(self.toolbox, text="Clear All", width=180, height=32,
                       fg_color="#7a2a2a", hover_color="#5f1f1f",
                       command=self._on_clear).pack(pady=2)
-        ctk.CTkLabel(self.toolbox, text="").pack(pady=4)
 
         save_load_frame = ctk.CTkFrame(self.toolbox, fg_color="transparent")
-        save_load_frame.pack(pady=2)
-        ctk.CTkButton(save_load_frame, text="Save", width=85, height=36,
+        save_load_frame.pack(pady=4)
+        ctk.CTkButton(save_load_frame, text="Save", width=85, height=32,
                       command=self._on_save).pack(side="left", padx=4)
-        ctk.CTkButton(save_load_frame, text="Load", width=85, height=36,
+        ctk.CTkButton(save_load_frame, text="Load", width=85, height=32,
                       command=self._on_load).pack(side="left", padx=4)
-        
+
     def _build_canvas(self):
         canvas_frame = ctk.CTkFrame(self, corner_radius=0)
         canvas_frame.grid(row=0, column=1, sticky="nsew")
@@ -258,6 +266,11 @@ class LadderEditor(ctk.CTk):
         ctk.CTkButton(self.status_frame, text="Download", width=100,
                       fg_color="#2a7a2a", hover_color="#1f5f1f",
                       command=self._on_download).pack(side="left", padx=5)
+
+        self.monitor_btn = ctk.CTkButton(self.status_frame, text="Monitor: OFF",
+                                          width=130, fg_color="#666666",
+                                          command=self._on_toggle_monitor)
+        self.monitor_btn.pack(side="left", padx=5)
 
         self.status_label = ctk.CTkLabel(self.status_frame, text="Ready", text_color="gray")
         self.status_label.pack(side="right", padx=15)
@@ -385,27 +398,37 @@ class LadderEditor(ctk.CTk):
         addr = elem.get("addr", "?")
         preset = elem.get("preset", None)
 
+        # Determine color based on monitoring state
+        if self.monitoring:
+            is_active = self.live_state.get(addr, False) is True
+            if is_active:
+                elem_color = ELEMENT_ACTIVE
+            else:
+                elem_color = ELEMENT_INACTIVE
+        else:
+            elem_color = ELEMENT_COLOR
+
         x1 = x - ELEMENT_WIDTH / 2
         x2 = x + ELEMENT_WIDTH / 2
         self.canvas.create_line(x1, y, x2, y, fill=CANVAS_RAIL, width=2)
 
         if kind == "Contact":
-            self.canvas.create_line(x - 12, y - 15, x - 12, y + 15, fill=ELEMENT_COLOR, width=3)
-            self.canvas.create_line(x + 12, y - 15, x + 12, y + 15, fill=ELEMENT_COLOR, width=3)
+            self.canvas.create_line(x - 12, y - 15, x - 12, y + 15, fill=elem_color, width=3)
+            self.canvas.create_line(x + 12, y - 15, x + 12, y + 15, fill=elem_color, width=3)
         elif kind == "Not Contact":
-            self.canvas.create_line(x - 12, y - 15, x - 12, y + 15, fill=ELEMENT_COLOR, width=3)
-            self.canvas.create_line(x + 12, y - 15, x + 12, y + 15, fill=ELEMENT_COLOR, width=3)
-            self.canvas.create_line(x - 14, y + 14, x + 14, y - 14, fill=ELEMENT_COLOR, width=2)
+            self.canvas.create_line(x - 12, y - 15, x - 12, y + 15, fill=elem_color, width=3)
+            self.canvas.create_line(x + 12, y - 15, x + 12, y + 15, fill=elem_color, width=3)
+            self.canvas.create_line(x - 14, y + 14, x + 14, y - 14, fill=elem_color, width=2)
         elif kind == "Coil":
             self.canvas.create_arc(x - 18, y - 18, x + 18, y + 18,
                                    start=45, extent=270, style="arc",
-                                   outline=ELEMENT_COLOR, width=3)
+                                   outline=elem_color, width=3)
         elif kind in ("Timer (TON)", "Counter (CTU)", "Reset (RST)"):
             self.canvas.create_rectangle(x - 22, y - 16, x + 22, y + 16,
-                                         outline=ELEMENT_COLOR, width=2)
+                                         outline=elem_color, width=2)
             label = {"Timer (TON)": "TON", "Counter (CTU)": "CTU", "Reset (RST)": "RST"}[kind]
             self.canvas.create_text(x, y, text=label,
-                                    fill=ELEMENT_COLOR, font=("Arial", 10, "bold"))
+                                    fill=elem_color, font=("Arial", 10, "bold"))
 
         label = addr
         if preset is not None:
@@ -540,7 +563,7 @@ class LadderEditor(ctk.CTk):
             messagebox.showerror("Load error", str(e))
 
     # ============================================================
-    # Compile diagram -> bytecode (Phase 1: only first branch)
+    # Compile diagram -> bytecode
     # ============================================================
     def compile_program(self):
         bytecode = []
@@ -589,8 +612,7 @@ class LadderEditor(ctk.CTk):
                                   f"parallel branches can only have contacts")
                 if len(par_elements) > 1:
                     return None, (f"Rung {rung_idx}, branch {branch_idx}: "
-                                  f"parallel branches must have exactly one element "
-                                  f"(found {len(par_elements)})")
+                                  f"parallel branches must have exactly one element")
 
                 elem = par_elements[0]
                 addr = encode_addr(elem["addr"])
@@ -639,10 +661,6 @@ class LadderEditor(ctk.CTk):
             print(" ".join(f"{b:02X}" for b in chunk))
         print("=====================\n")
 
-        for i, rung in enumerate(self.program["rungs"]):
-            total = sum(len(b["elements"]) for b in rung["branches"])
-            print(f"Rung {i}: {total} elements across {len(rung['branches'])} branches")
-
         self.status_label.configure(text=f"Compiled: {len(bytecode)} bytes")
 
     # ============================================================
@@ -658,6 +676,11 @@ class LadderEditor(ctk.CTk):
 
     def _on_connect(self):
         if self.serial_port and self.serial_port.is_open:
+            # Stop monitoring before disconnecting
+            if self.monitoring:
+                self.monitoring = False
+                self.monitor_btn.configure(text="Monitor: OFF", fg_color="#666666")
+                self.live_state = {}
             self.serial_port.close()
             self.serial_port = None
             self.connect_btn.configure(text="Connect")
@@ -692,6 +715,10 @@ class LadderEditor(ctk.CTk):
                          args=(bytecode,), daemon=True).start()
 
     def _download_worker(self, bytecode):
+        # Acquire serial lock to prevent monitor poll interleaving
+        if not self.serial_lock.acquire(timeout=2.0):
+            self._set_status("ERROR: serial busy")
+            return
         try:
             ser = self.serial_port
             n = len(bytecode)
@@ -726,7 +753,7 @@ class LadderEditor(ctk.CTk):
                 self._set_status("ERROR: STM32 did not confirm bytes")
                 return
 
-            self._set_status("Bytes received. Switching to new program...")
+            self._set_status("Bytes received. Switching...")
             ser.write(b"run\r\n")
 
             deadline = time.time() + 2.0
@@ -746,9 +773,107 @@ class LadderEditor(ctk.CTk):
         except Exception as e:
             self._set_status(f"ERROR: {e}")
             print(f"[download] Exception: {e}")
+        finally:
+            self.serial_lock.release()
 
     def _set_status(self, text):
         self.after(0, lambda: self.status_label.configure(text=text))
+
+    # ============================================================
+    # Live monitoring
+    # ============================================================
+    def _on_toggle_monitor(self):
+        if self.monitoring:
+            self.monitoring = False
+            self.monitor_btn.configure(text="Monitor: OFF", fg_color="#666666")
+            self.live_state = {}
+            self._redraw_canvas()
+            self.status_label.configure(text="Monitoring stopped")
+            return
+
+        if not (self.serial_port and self.serial_port.is_open):
+            messagebox.showwarning("Not connected", "Connect to STM32 first")
+            return
+
+        self.monitoring = True
+        self.monitor_btn.configure(text="Monitor: ON", fg_color="#c19a2a")
+        self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self.monitor_thread.start()
+
+    def _monitor_loop(self):
+        while self.monitoring:
+            try:
+                if not (self.serial_port and self.serial_port.is_open):
+                    break
+
+                buf = b""
+                if self.serial_lock.acquire(timeout=0.5):
+                    try:
+                        self.serial_port.reset_input_buffer()
+                        self.serial_port.write(b"mon\r\n")
+
+                        deadline = time.time() + 0.4
+                        while time.time() < deadline:
+                            if self.serial_port.in_waiting:
+                                buf += self.serial_port.read(self.serial_port.in_waiting)
+                                if b"SCAN=" in buf:
+                                    # Wait briefly for the rest of the line
+                                    time.sleep(0.02)
+                                    if self.serial_port.in_waiting:
+                                        buf += self.serial_port.read(self.serial_port.in_waiting)
+                                    break
+                            time.sleep(0.01)
+                    finally:
+                        self.serial_lock.release()
+
+                state = self._parse_mon(buf.decode("ascii", errors="ignore"))
+                if state is not None:
+                    self.live_state = state["io"]
+                    self.live_scan_count = state["scan"]
+                    self.after(0, self._redraw_canvas)
+                    scan = self.live_scan_count
+                    self.after(0, lambda s=scan: self.status_label.configure(
+                        text=f"Live | Scan: {s}"
+                    ))
+
+            except Exception as e:
+                print(f"[monitor] error: {e}")
+
+            time.sleep(0.2)
+
+    def _parse_mon(self, text):
+        idx_mon = text.find("MON I=")
+        if idx_mon < 0:
+            return None
+        try:
+            line = text[idx_mon:].split("\n")[0].split("\r")[0]
+            i_idx = line.find("I=")
+            i_part = line[i_idx + 2 : i_idx + 10]
+            q_idx = line.find("Q=")
+            q_part = line[q_idx + 2 : q_idx + 6]
+            scan_idx = line.find("SCAN=")
+            scan_str = line[scan_idx + 5 :].strip()
+
+            if len(i_part) < 8 or len(q_part) < 4:
+                return None
+            if not all(c in "01" for c in i_part):
+                return None
+            if not all(c in "01" for c in q_part):
+                return None
+            scan = 0
+            try:
+                scan = int(scan_str)
+            except ValueError:
+                pass
+
+            io = {}
+            for k in range(8):
+                io[f"I{k}"] = (i_part[k] == "1")
+            for k in range(4):
+                io[f"Q{k}"] = (q_part[k] == "1")
+            return {"io": io, "scan": scan}
+        except Exception:
+            return None
 
 
 # ---------- Run the editor ----------
