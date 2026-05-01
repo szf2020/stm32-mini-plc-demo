@@ -546,24 +546,68 @@ class LadderEditor(ctk.CTk):
         bytecode = []
 
         for rung_idx, rung in enumerate(self.program["rungs"]):
-            branch = rung["branches"][0]
-            elements = sorted(branch["elements"], key=lambda e: e["x"])
-            if not elements: continue
+            branches = rung["branches"]
+            if not branches:
+                continue
 
-            inputs = [e for e in elements if e["type"] in ("Contact", "Not Contact")]
-            outputs = [e for e in elements if e["type"] in
-                       ("Coil", "Timer (TON)", "Counter (CTU)", "Reset (RST)")]
+            main_branch = branches[0]
+            main_elements = sorted(main_branch["elements"], key=lambda e: e["x"])
 
-            for i, elem in enumerate(inputs):
-                addr = encode_addr(elem["addr"])
-                if elem["type"] == "Contact":
-                    bytecode.extend([OPCODES["LD"] if i == 0 else OPCODES["AND"], addr])
-                else:
-                    bytecode.extend([OPCODES["LDN"] if i == 0 else OPCODES["ANDN"], addr])
+            if not main_elements:
+                if any(len(b["elements"]) > 0 for b in branches[1:]):
+                    return None, f"Rung {rung_idx}: main branch is empty"
+                continue
 
-            if not inputs and outputs:
+            main_inputs = [e for e in main_elements
+                           if e["type"] in ("Contact", "Not Contact")]
+            outputs = [e for e in main_elements
+                       if e["type"] in ("Coil", "Timer (TON)", "Counter (CTU)", "Reset (RST)")]
+
+            if not main_inputs and outputs:
                 return None, f"Rung {rung_idx}: outputs need at least one input"
 
+            # Step 1: emit FIRST main input as LD/LDN
+            first_input = main_inputs[0]
+            addr = encode_addr(first_input["addr"])
+            if first_input["type"] == "Contact":
+                bytecode.extend([OPCODES["LD"], addr])
+            else:
+                bytecode.extend([OPCODES["LDN"], addr])
+
+            # Step 2: emit all parallel branches as OR/ORN
+            for branch_idx in range(1, len(branches)):
+                branch = branches[branch_idx]
+                par_elements = [e for e in branch["elements"]
+                                if e["type"] in ("Contact", "Not Contact")]
+                par_outputs = [e for e in branch["elements"]
+                               if e["type"] not in ("Contact", "Not Contact")]
+
+                if not par_elements and not par_outputs:
+                    continue
+                if par_outputs:
+                    return None, (f"Rung {rung_idx}, branch {branch_idx}: "
+                                  f"parallel branches can only have contacts")
+                if len(par_elements) > 1:
+                    return None, (f"Rung {rung_idx}, branch {branch_idx}: "
+                                  f"parallel branches must have exactly one element "
+                                  f"(found {len(par_elements)})")
+
+                elem = par_elements[0]
+                addr = encode_addr(elem["addr"])
+                if elem["type"] == "Contact":
+                    bytecode.extend([OPCODES["OR"], addr])
+                else:
+                    bytecode.extend([OPCODES["ORN"], addr])
+
+            # Step 3: emit remaining main inputs as AND/ANDN
+            for elem in main_inputs[1:]:
+                addr = encode_addr(elem["addr"])
+                if elem["type"] == "Contact":
+                    bytecode.extend([OPCODES["AND"], addr])
+                else:
+                    bytecode.extend([OPCODES["ANDN"], addr])
+
+            # Step 4: emit outputs
             for elem in outputs:
                 addr = encode_addr(elem["addr"])
                 if elem["type"] == "Coil":
