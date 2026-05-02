@@ -100,12 +100,12 @@ int main(void)
   MX_USART1_UART_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
-
+  /* USER CODE BEGIN 2 */
   scan_engine_init();
   HAL_TIM_Base_Start_IT(&htim2);
   uart_console_init();
   oled_display_init();
-
+  /* USER CODE END 2 */
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -116,7 +116,6 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 	  uart_console_poll();
-	  oled_display_update();
   }
   /* USER CODE END 3 */
 }

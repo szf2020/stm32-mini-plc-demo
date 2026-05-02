@@ -100,12 +100,17 @@ int main(void)
   MX_USART1_UART_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
-
   scan_engine_init();
   HAL_TIM_Base_Start_IT(&htim2);
   uart_console_init();
-  oled_display_init();
 
+  ssd1306_Init();
+  ssd1306_Fill(Black);
+  ssd1306_SetCursor(2, 0);
+  ssd1306_WriteString("STM32 Mini PLC", Font_7x10, White);
+  ssd1306_SetCursor(2, 14);
+  ssd1306_WriteString("OLED working!", Font_7x10, White);
+  ssd1306_UpdateScreen();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -116,7 +121,6 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 	  uart_console_poll();
-	  oled_display_update();
   }
   /* USER CODE END 3 */
 }
