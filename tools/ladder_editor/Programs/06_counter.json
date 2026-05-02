@@ -1,0 +1,59 @@
+{
+  "rungs": [
+    {
+      "branches": [
+        {
+          "elements": [
+            {
+              "type": "Contact",
+              "addr": "I0",
+              "x": 180
+            },
+            {
+              "type": "Counter (CTU)",
+              "addr": "C0",
+              "x": 280,
+              "preset": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "branches": [
+        {
+          "elements": [
+            {
+              "type": "Contact",
+              "addr": "C0",
+              "x": 180
+            },
+            {
+              "type": "Coil",
+              "addr": "Q0",
+              "x": 280
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "branches": [
+        {
+          "elements": [
+            {
+              "type": "Contact",
+              "addr": "I1",
+              "x": 180
+            },
+            {
+              "type": "Reset (RST)",
+              "addr": "C0",
+              "x": 280
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
