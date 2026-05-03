@@ -1,0 +1,231 @@
+#include "modbus.h"
+#include "io_image.h"
+#include "scan_engine.h"
+#include "main.h"
+#include <string.h>
+
+extern UART_HandleTypeDef huart2;
+
+// ============================================================
+// CRC-16 (Modbus standard polynomial 0xA001)
+// ============================================================
+static uint16_t crc16(const uint8_t *data, uint16_t len) {
+    uint16_t crc = 0xFFFF;
+    for (uint16_t i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (uint8_t j = 0; j < 8; j++) {
+            if (crc & 0x0001) {
+                crc = (crc >> 1) ^ 0xA001;
+            } else {
+                crc >>= 1;
+            }
+        }
+    }
+    return crc;
+}
+
+// ============================================================
+// RS485 direction control
+// ============================================================
+static void rs485_tx_mode(void) {
+    HAL_GPIO_WritePin(MODBUS_DE_PORT, MODBUS_DE_PIN, GPIO_PIN_SET);
+}
+
+static void rs485_rx_mode(void) {
+    HAL_GPIO_WritePin(MODBUS_DE_PORT, MODBUS_DE_PIN, GPIO_PIN_RESET);
+}
+
+// ============================================================
+// Frame reception state machine
+// ============================================================
+static uint8_t  rx_buf[MODBUS_RX_BUFFER_SIZE];
+uint8_t rx_byte_raw;
+//static uint8_t  rx_byte_raw;
+static volatile uint8_t  rx_len = 0;
+static volatile uint32_t last_rx_tick = 0;
+static volatile bool     frame_ready = false;
+
+void modbus_init(void) {
+    rs485_rx_mode();
+    rx_len = 0;
+    frame_ready = false;
+    // Start interrupt-driven receive
+    HAL_UART_Receive_IT(&huart2, &rx_byte_raw, 1);
+}
+
+// Called from HAL_UART_RxCpltCallback for huart2
+void modbus_rx_byte(uint8_t byte) {
+    if (rx_len < MODBUS_RX_BUFFER_SIZE) {
+        rx_buf[rx_len++] = byte;
+        last_rx_tick = HAL_GetTick();
+    }
+    // Re-arm interrupt
+    HAL_UART_Receive_IT(&huart2, &rx_byte_raw, 1);
+}
+
+// ============================================================
+// Send response
+// ============================================================
+static void send_response(uint8_t *buf, uint8_t len) {
+    uint16_t crc = crc16(buf, len);
+    buf[len]     = crc & 0xFF;
+    buf[len + 1] = (crc >> 8) & 0xFF;
+
+    rs485_tx_mode();
+    HAL_UART_Transmit(&huart2, buf, len + 2, 100);
+    // Wait for transmission to complete before switching back
+    HAL_Delay(1);
+    rs485_rx_mode();
+}
+
+// ============================================================
+// Exception response
+// ============================================================
+static void send_exception(uint8_t func_code, uint8_t exception_code) {
+    uint8_t buf[3];
+    buf[0] = MODBUS_SLAVE_ADDRESS;
+    buf[1] = func_code | 0x80;  // error flag
+    buf[2] = exception_code;
+    send_response(buf, 3);
+}
+
+// ============================================================
+// FC01 — Read Coils
+// Read Q0..Q3 output states
+// ============================================================
+static void handle_read_coils(uint8_t *frame) {
+    uint16_t start_addr = ((uint16_t)frame[2] << 8) | frame[3];
+    uint16_t quantity   = ((uint16_t)frame[4] << 8) | frame[5];
+
+    // Validate: we support coils 0-7 (Q0-Q3 outputs, I0-I3 inputs)
+    if (quantity == 0 || quantity > 8 || (start_addr + quantity) > 8) {
+        send_exception(FC_READ_COILS, 0x02);  // illegal data address
+        return;
+    }
+
+    uint8_t byte_count = (quantity + 7) / 8;
+    uint8_t buf[6];  // addr + fc + byte_count + data + 2 CRC
+    buf[0] = MODBUS_SLAVE_ADDRESS;
+    buf[1] = FC_READ_COILS;
+    buf[2] = byte_count;
+
+    // Pack coil states into bytes
+    // Coils 0-3 = Q0-Q3 outputs, Coils 4-7 = I0-I3 inputs
+    uint8_t coil_byte = 0;
+    for (uint8_t i = 0; i < quantity; i++) {
+        uint8_t coil_addr = start_addr + i;
+        uint8_t state = 0;
+        if (coil_addr < 4) {
+            state = g_io.digital_out[coil_addr] ? 1 : 0;
+        } else if (coil_addr < 8) {
+            state = g_io.digital_in[coil_addr - 4] ? 1 : 0;
+        }
+        if (state) coil_byte |= (1 << i);
+    }
+    buf[3] = coil_byte;
+
+    send_response(buf, 4);
+}
+
+// ============================================================
+// FC05 — Write Single Coil
+// Force Q0..Q3 output ON or OFF
+// ============================================================
+static void handle_write_single_coil(uint8_t *frame) {
+    uint16_t coil_addr  = ((uint16_t)frame[2] << 8) | frame[3];
+    uint16_t coil_value = ((uint16_t)frame[4] << 8) | frame[5];
+
+    // Only Q0-Q3 (coils 0-3) are writable
+    if (coil_addr > 3) {
+        send_exception(FC_WRITE_SINGLE_COIL, 0x02);
+        return;
+    }
+    if (coil_value != COIL_ON && coil_value != COIL_OFF) {
+        send_exception(FC_WRITE_SINGLE_COIL, 0x03);  // illegal data value
+        return;
+    }
+
+    g_io.digital_out[coil_addr] = (coil_value == COIL_ON) ? 1 : 0;
+
+    // Echo request back as response (Modbus spec)
+    uint8_t buf[6];
+    memcpy(buf, frame, 6);
+    buf[0] = MODBUS_SLAVE_ADDRESS;
+    send_response(buf, 6);
+}
+
+// ============================================================
+// FC03 — Read Holding Registers
+// Register 0 = scan count (32-bit split into 2 registers)
+// Register 1 = scan count high word
+// ============================================================
+static void handle_read_holding_regs(uint8_t *frame) {
+    uint16_t start_addr = ((uint16_t)frame[2] << 8) | frame[3];
+    uint16_t quantity   = ((uint16_t)frame[4] << 8) | frame[5];
+
+    if (quantity == 0 || quantity > 2 || start_addr > 1) {
+        send_exception(FC_READ_HOLDING_REGS, 0x02);
+        return;
+    }
+
+    uint8_t buf[9];
+    buf[0] = MODBUS_SLAVE_ADDRESS;
+    buf[1] = FC_READ_HOLDING_REGS;
+    buf[2] = quantity * 2;  // byte count
+
+    uint32_t scan = scan_get_count();
+    uint16_t reg0 = scan & 0xFFFF;         // low word
+    uint16_t reg1 = (scan >> 16) & 0xFFFF; // high word
+
+    uint8_t idx = 3;
+    if (start_addr == 0 && quantity >= 1) {
+        buf[idx++] = (reg0 >> 8) & 0xFF;
+        buf[idx++] = reg0 & 0xFF;
+    }
+    if (quantity == 2 || start_addr == 1) {
+        buf[idx++] = (reg1 >> 8) & 0xFF;
+        buf[idx++] = reg1 & 0xFF;
+    }
+
+    send_response(buf, idx);
+}
+
+// ============================================================
+// Main poll function — call from main loop
+// ============================================================
+void modbus_poll(void) {
+    // Wait for inter-frame silence to declare frame complete
+    if (rx_len == 0) return;
+    if ((HAL_GetTick() - last_rx_tick) < MODBUS_FRAME_TIMEOUT_MS) return;
+
+    // Frame is ready — process it
+    uint8_t len = rx_len;
+    rx_len = 0;  // reset for next frame
+
+    // Minimum Modbus frame = 4 bytes (addr + fc + 2 CRC)
+    if (len < 4) return;
+
+    // Check slave address
+    if (rx_buf[0] != MODBUS_SLAVE_ADDRESS) return;
+
+    // Verify CRC
+    uint16_t received_crc = ((uint16_t)rx_buf[len-1] << 8) | rx_buf[len-2];
+    uint16_t calculated_crc = crc16(rx_buf, len - 2);
+    if (received_crc != calculated_crc) return;  // bad CRC, ignore silently
+
+    // Dispatch by function code
+    switch (rx_buf[1]) {
+        case FC_READ_COILS:
+            handle_read_coils(rx_buf);
+            break;
+        case FC_WRITE_SINGLE_COIL:
+            handle_write_single_coil(rx_buf);
+            break;
+        case FC_READ_HOLDING_REGS:
+            handle_read_holding_regs(rx_buf);
+            break;
+        default:
+            send_exception(rx_buf[1], 0x01);  // illegal function
+            break;
+    }
+}

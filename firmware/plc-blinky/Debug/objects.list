@@ -17,6 +17,7 @@
 "./Src/io_image.o"
 "./Src/ladder_vm.o"
 "./Src/main.o"
+"./Src/modbus.o"
 "./Src/oled_display.o"
 "./Src/scan_engine.o"
 "./Src/ssd1306.o"

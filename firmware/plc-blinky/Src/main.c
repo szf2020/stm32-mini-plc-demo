@@ -24,6 +24,7 @@
 #include "scan_engine.h"
 #include "uart_console.h"
 #include "oled_display.h"
+#include "modbus.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -47,6 +48,7 @@ I2C_HandleTypeDef hi2c1;
 TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
@@ -58,6 +60,7 @@ static void MX_GPIO_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -99,12 +102,15 @@ int main(void)
   MX_TIM2_Init();
   MX_USART1_UART_Init();
   MX_I2C1_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
   scan_engine_init();
   HAL_TIM_Base_Start_IT(&htim2);
   uart_console_init();
   oled_display_init();
+  modbus_init();
+
 
   /* USER CODE END 2 */
 
@@ -117,6 +123,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
 	  uart_console_poll();
 	  oled_display_update();
+	  modbus_poll();
   }
   /* USER CODE END 3 */
 }
@@ -273,6 +280,39 @@ static void MX_USART1_UART_Init(void)
 }
 
 /**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 9600;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -294,8 +334,11 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, scan_pulse_Pin|IND_OUT_0_Pin|IND_OUT_1_Pin|IND_OUT_2_Pin
-                          |IND_OUT_3_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, scan_pulse_Pin|IND_OUT_0_Pin|IND_OUT_3_Pin|IND_OUT_1_Pin
+                          |IND_OUT_2_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(RS485_DE_GPIO_Port, RS485_DE_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : PC13 */
   GPIO_InitStruct.Pin = GPIO_PIN_13;
@@ -304,10 +347,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : scan_pulse_Pin IND_OUT_0_Pin IND_OUT_1_Pin IND_OUT_2_Pin
-                           IND_OUT_3_Pin */
-  GPIO_InitStruct.Pin = scan_pulse_Pin|IND_OUT_0_Pin|IND_OUT_1_Pin|IND_OUT_2_Pin
-                          |IND_OUT_3_Pin;
+  /*Configure GPIO pins : scan_pulse_Pin IND_OUT_0_Pin IND_OUT_3_Pin IND_OUT_1_Pin
+                           IND_OUT_2_Pin */
+  GPIO_InitStruct.Pin = scan_pulse_Pin|IND_OUT_0_Pin|IND_OUT_3_Pin|IND_OUT_1_Pin
+                          |IND_OUT_2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -327,6 +370,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : RS485_DE_Pin */
+  GPIO_InitStruct.Pin = RS485_DE_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(RS485_DE_GPIO_Port, &GPIO_InitStruct);
+
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
   /* USER CODE END MX_GPIO_Init_2 */
@@ -342,6 +392,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART1) {
         void uart_console_on_rx(void);
         uart_console_on_rx();
+    }
+    if (huart->Instance == USART2) {
+        modbus_rx_byte_from_isr();
     }
 }
 /* USER CODE END 4 */

@@ -61,16 +61,14 @@ void Error_Handler(void);
 #define scan_pulse_GPIO_Port GPIOA
 #define IND_OUT_0_Pin GPIO_PIN_1
 #define IND_OUT_0_GPIO_Port GPIOA
-#define IND_OUT_1_Pin GPIO_PIN_2
-#define IND_OUT_1_GPIO_Port GPIOA
-#define IND_OUT_2_Pin GPIO_PIN_3
-#define IND_OUT_2_GPIO_Port GPIOA
 #define IND_IN_6_Pin GPIO_PIN_4
 #define IND_IN_6_GPIO_Port GPIOA
 #define IND_IN_7_Pin GPIO_PIN_5
 #define IND_IN_7_GPIO_Port GPIOA
 #define IND_OUT_3_Pin GPIO_PIN_6
 #define IND_OUT_3_GPIO_Port GPIOA
+#define IND_OUT_1_Pin GPIO_PIN_7
+#define IND_OUT_1_GPIO_Port GPIOA
 #define START_BTN_Pin GPIO_PIN_0
 #define START_BTN_GPIO_Port GPIOB
 #define STOP_BTN_Pin GPIO_PIN_1
@@ -87,6 +85,10 @@ void Error_Handler(void);
 #define IND_IN_4_GPIO_Port GPIOB
 #define IND_IN_5_Pin GPIO_PIN_15
 #define IND_IN_5_GPIO_Port GPIOB
+#define IND_OUT_2_Pin GPIO_PIN_8
+#define IND_OUT_2_GPIO_Port GPIOA
+#define RS485_DE_Pin GPIO_PIN_3
+#define RS485_DE_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
