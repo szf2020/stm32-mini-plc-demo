@@ -1,0 +1,64 @@
+{
+  "rungs": [
+    {
+      "branches": [
+        {
+          "elements": [
+            { "type": "Contact",       "addr": "I0", "x": 200 },
+            { "type": "Counter (CTU)", "addr": "C0", "x": 500, "preset": 5 }
+          ]
+        }
+      ]
+    },
+    {
+      "branches": [
+        {
+          "elements": [
+            { "type": "Equals", "addr": "C0", "x": 200, "value": 1 },
+            { "type": "Coil",   "addr": "Q0", "x": 700 }
+          ]
+        }
+      ]
+    },
+    {
+      "branches": [
+        {
+          "elements": [
+            { "type": "Equals", "addr": "C0", "x": 200, "value": 2 },
+            { "type": "Coil",   "addr": "Q1", "x": 700 }
+          ]
+        }
+      ]
+    },
+    {
+      "branches": [
+        {
+          "elements": [
+            { "type": "Equals", "addr": "C0", "x": 200, "value": 3 },
+            { "type": "Coil",   "addr": "Q2", "x": 700 }
+          ]
+        }
+      ]
+    },
+    {
+      "branches": [
+        {
+          "elements": [
+            { "type": "Equals", "addr": "C0", "x": 200, "value": 4 },
+            { "type": "Coil",   "addr": "Q3", "x": 700 }
+          ]
+        }
+      ]
+    },
+    {
+      "branches": [
+        {
+          "elements": [
+            { "type": "Contact",     "addr": "C0", "x": 200 },
+            { "type": "Reset (RST)", "addr": "C0", "x": 700 }
+          ]
+        }
+      ]
+    }
+  ]
+}

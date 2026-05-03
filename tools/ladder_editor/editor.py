@@ -43,6 +43,7 @@ BRANCH_OFFSET_Y = 50
 ELEMENT_TYPES = [
     ("Contact",       "─| |─",   "I0", "input"),
     ("Not Contact",   "─|/|─",   "I0", "input"),
+    ("Equals",        "─[=]─",   "C0", "equals"),
     ("Coil",          "─( )─",   "Q0", "output"),
     ("Timer (TON)",   "─(TON)─", "T0", "timer"),
     ("Counter (CTU)", "─(CTU)─", "C0", "counter"),
@@ -59,10 +60,14 @@ VALID_ADDRESSES["contact"] = (VALID_ADDRESSES["input"] + VALID_ADDRESSES["output
                               + [f"T{i}" for i in range(8)]
                               + [f"C{i}" for i in range(8)])
 VALID_ADDRESSES["reset"] = VALID_ADDRESSES["timer"] + VALID_ADDRESSES["counter"]
+VALID_ADDRESSES["equals"] = (VALID_ADDRESSES["input"] + VALID_ADDRESSES["output"]
+                             + [f"T{i}" for i in range(8)]
+                             + [f"C{i}" for i in range(8)])
 
 
 def get_addr_type(elem_type):
     if elem_type in ("Contact", "Not Contact"): return "contact"
+    elif elem_type == "Equals": return "equals"
     elif elem_type == "Coil": return "output"
     elif elem_type == "Timer (TON)": return "timer"
     elif elem_type == "Counter (CTU)": return "counter"
@@ -108,7 +113,7 @@ class ElementEditorDialog(ctk.CTkToplevel):
     def __init__(self, parent, element):
         super().__init__(parent)
         self.title("Edit Element")
-        self.geometry("320x260")
+        self.geometry("320x280")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -126,6 +131,7 @@ class ElementEditorDialog(ctk.CTkToplevel):
         ctk.CTkComboBox(self, values=valid, variable=self.addr_var, width=200).pack(pady=(5, 10))
 
         self.preset_entry = None
+        self.compare_entry = None
         if element["type"] in ("Timer (TON)", "Counter (CTU)"):
             label_text = "Preset (ms)" if element["type"] == "Timer (TON)" else "Preset (count)"
             ctk.CTkLabel(self, text=label_text).pack(pady=(5, 0))
@@ -133,6 +139,12 @@ class ElementEditorDialog(ctk.CTkToplevel):
             self.preset_entry = ctk.CTkEntry(self, width=200)
             self.preset_entry.insert(0, str(current_preset))
             self.preset_entry.pack(pady=(5, 10))
+        elif element["type"] == "Equals":
+            ctk.CTkLabel(self, text="Compare value (0-65535)").pack(pady=(5, 0))
+            current_value = element.get("value", 0)
+            self.compare_entry = ctk.CTkEntry(self, width=200)
+            self.compare_entry.insert(0, str(current_value))
+            self.compare_entry.pack(pady=(5, 10))
 
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.pack(pady=15)
@@ -153,6 +165,16 @@ class ElementEditorDialog(ctk.CTkToplevel):
                 updated["preset"] = int(self.preset_entry.get())
             except ValueError:
                 messagebox.showerror("Invalid", "Preset must be a number")
+                return
+        if self.compare_entry is not None:
+            try:
+                v = int(self.compare_entry.get())
+                if v < 0 or v > 65535:
+                    messagebox.showerror("Invalid", "Compare value must be 0-65535")
+                    return
+                updated["value"] = v
+            except ValueError:
+                messagebox.showerror("Invalid", "Compare value must be a number")
                 return
         self.result = ("update", updated)
         self.destroy()
@@ -213,7 +235,7 @@ class LadderEditor(ctk.CTk):
         self.tool_buttons = {}
         for name, symbol, default_addr, _ in ELEMENT_TYPES:
             btn = ctk.CTkButton(self.toolbox, text=f"{symbol}\n{name}",
-                                width=180, height=38,
+                                width=180, height=36,
                                 command=lambda n=name: self._select_tool(n))
             btn.pack(pady=2)
             self.tool_buttons[name] = btn
@@ -397,6 +419,7 @@ class LadderEditor(ctk.CTk):
         kind = elem["type"]
         addr = elem.get("addr", "?")
         preset = elem.get("preset", None)
+        value = elem.get("value", None)
 
         # Determine color based on monitoring state
         if self.monitoring:
@@ -429,10 +452,17 @@ class LadderEditor(ctk.CTk):
             label = {"Timer (TON)": "TON", "Counter (CTU)": "CTU", "Reset (RST)": "RST"}[kind]
             self.canvas.create_text(x, y, text=label,
                                     fill=elem_color, font=("Arial", 10, "bold"))
+        elif kind == "Equals":
+            self.canvas.create_rectangle(x - 22, y - 16, x + 22, y + 16,
+                                         outline=elem_color, width=2)
+            self.canvas.create_text(x, y, text="EQ",
+                                    fill=elem_color, font=("Arial", 10, "bold"))
 
         label = addr
         if preset is not None:
             label += f" ={preset}"
+        elif value is not None:
+            label += f" =={value}"
         self.canvas.create_text(x, y + 28, text=label, fill=ELEMENT_TEXT, font=("Arial", 11, "bold"))
 
     # ============================================================
@@ -476,6 +506,8 @@ class LadderEditor(ctk.CTk):
             new_element["preset"] = 2000
         elif self.selected_tool == "Counter (CTU)":
             new_element["preset"] = 5
+        elif self.selected_tool == "Equals":
+            new_element["value"] = 0
 
         self.program["rungs"][rung_idx]["branches"][branch_idx]["elements"].append(new_element)
         branch_text = f"branch {branch_idx}" if branch_idx > 0 else "main"
@@ -582,24 +614,32 @@ class LadderEditor(ctk.CTk):
                 continue
 
             main_inputs = [e for e in main_elements
-                           if e["type"] in ("Contact", "Not Contact")]
+                           if e["type"] in ("Contact", "Not Contact", "Equals")]
             outputs = [e for e in main_elements
                        if e["type"] in ("Coil", "Timer (TON)", "Counter (CTU)", "Reset (RST)")]
 
             if not main_inputs and outputs:
                 return None, f"Rung {rung_idx}: outputs need at least one input"
 
-            # Step 1: emit FIRST main input as LD/LDN
+            # Step 1: emit FIRST main input as LD/LDN/LDEQ
             first_input = main_inputs[0]
             addr = encode_addr(first_input["addr"])
             if first_input["type"] == "Contact":
                 bytecode.extend([OPCODES["LD"], addr])
-            else:
+            elif first_input["type"] == "Not Contact":
                 bytecode.extend([OPCODES["LDN"], addr])
+            elif first_input["type"] == "Equals":
+                val = first_input.get("value", 0)
+                bytecode.extend([OPCODES["LDEQ"], addr, val & 0xFF, (val >> 8) & 0xFF])
 
             # Step 2: emit all parallel branches as OR/ORN
+            # Equals not supported in parallel branches (no OREQ opcode)
             for branch_idx in range(1, len(branches)):
                 branch = branches[branch_idx]
+                has_equals = any(e["type"] == "Equals" for e in branch["elements"])
+                if has_equals:
+                    return None, (f"Rung {rung_idx}, branch {branch_idx}: "
+                                  f"Equals not supported in parallel branches")
                 par_elements = [e for e in branch["elements"]
                                 if e["type"] in ("Contact", "Not Contact")]
                 par_outputs = [e for e in branch["elements"]
@@ -623,6 +663,9 @@ class LadderEditor(ctk.CTk):
 
             # Step 3: emit remaining main inputs as AND/ANDN
             for elem in main_inputs[1:]:
+                if elem["type"] == "Equals":
+                    return None, ("Equals element must be the first input on a rung "
+                                  "(no AND-equals opcode)")
                 addr = encode_addr(elem["addr"])
                 if elem["type"] == "Contact":
                     bytecode.extend([OPCODES["AND"], addr])
@@ -676,7 +719,6 @@ class LadderEditor(ctk.CTk):
 
     def _on_connect(self):
         if self.serial_port and self.serial_port.is_open:
-            # Stop monitoring before disconnecting
             if self.monitoring:
                 self.monitoring = False
                 self.monitor_btn.configure(text="Monitor: OFF", fg_color="#666666")
@@ -715,7 +757,6 @@ class LadderEditor(ctk.CTk):
                          args=(bytecode,), daemon=True).start()
 
     def _download_worker(self, bytecode):
-        # Acquire serial lock to prevent monitor poll interleaving
         if not self.serial_lock.acquire(timeout=2.0):
             self._set_status("ERROR: serial busy")
             return
@@ -817,7 +858,6 @@ class LadderEditor(ctk.CTk):
                             if self.serial_port.in_waiting:
                                 buf += self.serial_port.read(self.serial_port.in_waiting)
                                 if b"SCAN=" in buf:
-                                    # Wait briefly for the rest of the line
                                     time.sleep(0.02)
                                     if self.serial_port.in_waiting:
                                         buf += self.serial_port.read(self.serial_port.in_waiting)

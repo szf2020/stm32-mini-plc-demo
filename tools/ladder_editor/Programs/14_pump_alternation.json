@@ -1,0 +1,39 @@
+{
+  "rungs": [
+    {
+      "branches": [
+        {
+          "elements": [
+            { "type": "Contact",     "addr": "I0", "x": 200 },
+            { "type": "Not Contact", "addr": "I1", "x": 350 },
+            { "type": "Not Contact", "addr": "I3", "x": 500 },
+            { "type": "Coil",        "addr": "Q0", "x": 700 }
+          ]
+        },
+        {
+          "elements": [
+            { "type": "Contact", "addr": "Q0", "x": 200 }
+          ]
+        }
+      ]
+    },
+    {
+      "branches": [
+        {
+          "elements": [
+            { "type": "Contact",     "addr": "I0", "x": 200 },
+            { "type": "Contact",     "addr": "I1", "x": 350 },
+            { "type": "Not Contact", "addr": "I2", "x": 500 },
+            { "type": "Not Contact", "addr": "I3", "x": 600 },
+            { "type": "Coil",        "addr": "Q1", "x": 750 }
+          ]
+        },
+        {
+          "elements": [
+            { "type": "Contact", "addr": "Q1", "x": 200 }
+          ]
+        }
+      ]
+    }
+  ]
+}

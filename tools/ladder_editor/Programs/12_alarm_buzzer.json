@@ -1,0 +1,30 @@
+{
+  "rungs": [
+    {
+      "branches": [
+        {
+          "elements": [
+            { "type": "Contact",     "addr": "I0", "x": 200 },
+            { "type": "Not Contact", "addr": "I1", "x": 400 },
+            { "type": "Coil",        "addr": "Q0", "x": 700 }
+          ]
+        },
+        {
+          "elements": [
+            { "type": "Contact", "addr": "Q0", "x": 200 }
+          ]
+        }
+      ]
+    },
+    {
+      "branches": [
+        {
+          "elements": [
+            { "type": "Contact", "addr": "Q0", "x": 200 },
+            { "type": "Coil",    "addr": "Q1", "x": 700 }
+          ]
+        }
+      ]
+    }
+  ]
+}
