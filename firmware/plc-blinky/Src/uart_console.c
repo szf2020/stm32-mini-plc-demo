@@ -349,6 +349,27 @@ static void process_command(const char *cmd) {
 }
 
 void uart_console_poll(void) {
+    // ===== JSON OUTPUT FOR ESP32 — every 500ms =====
+    static uint32_t last_json_ms = 0;
+    if (HAL_GetTick() - last_json_ms >= 500) {
+        last_json_ms = HAL_GetTick();
+        printf("JSON:{\"I\":[%d,%d,%d,%d,%d,%d,%d,%d],\"Q\":[%d,%d,%d,%d],\"S\":%lu}\r\n",
+               g_io.digital_in[0] ? 1 : 0,
+               g_io.digital_in[1] ? 1 : 0,
+               g_io.digital_in[2] ? 1 : 0,
+               g_io.digital_in[3] ? 1 : 0,
+               g_io.digital_in[4] ? 1 : 0,
+               g_io.digital_in[5] ? 1 : 0,
+               g_io.digital_in[6] ? 1 : 0,
+               g_io.digital_in[7] ? 1 : 0,
+               g_io.digital_out[0] ? 1 : 0,
+               g_io.digital_out[1] ? 1 : 0,
+               g_io.digital_out[2] ? 1 : 0,
+               g_io.digital_out[3] ? 1 : 0,
+               scan_get_count());
+    }
+    // ===== END JSON OUTPUT =====
+
     if (cmd_ready) {
         process_command(rx_buffer);
         rx_index = 0;

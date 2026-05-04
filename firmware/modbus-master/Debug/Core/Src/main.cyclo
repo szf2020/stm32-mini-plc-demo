@@ -1,0 +1,12 @@
+../Core/Src/main.c:51:5:__io_putchar	1
+../Core/Src/main.c:57:17:crc16	4
+../Core/Src/main.c:76:16:modbus_transaction	6
+../Core/Src/main.c:115:13:read_coils	3
+../Core/Src/main.c:145:13:read_scan_count	3
+../Core/Src/main.c:173:13:write_coil	5
+../Core/Src/main.c:199:5:main	7
+../Core/Src/main.c:270:6:SystemClock_Config	3
+../Core/Src/main.c:296:13:MX_USART1_UART_Init	2
+../Core/Src/main.c:310:13:MX_USART2_UART_Init	2
+../Core/Src/main.c:324:13:MX_GPIO_Init	1
+../Core/Src/main.c:341:6:Error_Handler	1

@@ -1,18 +1,17 @@
-18:36:25 **** Incremental Build of configuration Debug for project plc-blinky ****
+03:35:17 **** Incremental Build of configuration Debug for project plc-blinky ****
 make -j16 all 
-arm-none-eabi-gcc "../Src/main.c" -mcpu=cortex-m3 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F103xB -c -I../Inc -I../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy -I../Drivers/STM32F1xx_HAL_Driver/Inc -I../Drivers/CMSIS/Device/ST/STM32F1xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Src/main.d" -MT"Src/main.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Src/main.o"
-arm-none-eabi-gcc "../Src/modbus.c" -mcpu=cortex-m3 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F103xB -c -I../Inc -I../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy -I../Drivers/STM32F1xx_HAL_Driver/Inc -I../Drivers/CMSIS/Device/ST/STM32F1xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Src/modbus.d" -MT"Src/modbus.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Src/modbus.o"
+arm-none-eabi-gcc "../Src/oled_display.c" -mcpu=cortex-m3 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F103xB -c -I../Inc -I../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy -I../Drivers/STM32F1xx_HAL_Driver/Inc -I../Drivers/CMSIS/Device/ST/STM32F1xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Src/oled_display.d" -MT"Src/oled_display.o" --specs=nano.specs -mfloat-abi=soft -mthumb -o "Src/oled_display.o"
 arm-none-eabi-gcc -o "plc-blinky.elf" @"objects.list"   -mcpu=cortex-m3 -T"C:\Projects\stm32-mini-plc\firmware\plc-blinky\STM32F103C8TX_FLASH.ld" --specs=nosys.specs -Wl,-Map="plc-blinky.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 Finished building target: plc-blinky.elf
  
 arm-none-eabi-size  plc-blinky.elf 
 arm-none-eabi-objdump -h -S plc-blinky.elf  > "plc-blinky.list"
    text	   data	    bss	    dec	    hex	filename
-  36952	    112	   3768	  40832	   9f80	plc-blinky.elf
+  37292	    112	   3768	  41172	   a0d4	plc-blinky.elf
 Finished building: default.size.stdout
  
 Finished building: plc-blinky.list
  
 
-18:36:26 Build Finished. 0 errors, 0 warnings. (took 1s.401ms)
+03:35:18 Build Finished. 0 errors, 0 warnings. (took 742ms)
 

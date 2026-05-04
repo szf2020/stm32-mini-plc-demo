@@ -3,8 +3,20 @@
 	<item key="hasShownOverlayPopupBefore" value="true"/>
 	<item key="replaceBarOpen" value="false"/>
 	<list key="searchhistory">
-		<item value="/* USER CODE includes"/>
-		<item value="help"/>
-		<item value="catch all"/>
+		<item value="void oled_display_init()"/>
+		<item value="oled_display_init()"/>
+		<item value="void uart_console_poll()"/>
+		<item value="uart_console_poll()"/>
+		<item value="extern uint8_t modbus_rx_byte_raw;"/>
+		<item value="static uint8_t  rx_byte_raw;"/>
+		<item value="USER CODE BEGIN 4:"/>
+		<item value="IND_OUT_1"/>
+		<item value="#define"/>
+		<item value="#defin"/>
+		<item value="#define IND_OUT_1_"/>
+		<item value="#define IND_OUT_1_Pin GPIO_PIN_7"/>
+		<item value="HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2,"/>
+		<item value="HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, ...);"/>
+		<item value="HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, ...); "/>
 	</list>
 </section>

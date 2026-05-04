@@ -12,16 +12,23 @@ static uint32_t last_update_ms = 0;
 
 void oled_display_init(void) {
     ssd1306_Init();
+
+    // Boot screen
     ssd1306_Fill(Black);
-
-    ssd1306_SetCursor(2, 0);
+    ssd1306_SetCursor(10, 5);
     ssd1306_WriteString("STM32 Mini PLC", Font_7x10, White);
-
-    ssd1306_SetCursor(2, 14);
-    ssd1306_WriteString("Booting...", Font_7x10, White);
-
+    ssd1306_SetCursor(40, 22);
+    ssd1306_WriteString("v1.0", Font_7x10, White);
+    ssd1306_SetCursor(20, 38);
+    ssd1306_WriteString("Initializing...", Font_6x8, White);
+    ssd1306_SetCursor(0, 54);
+    ssd1306_WriteString("by Team ", Font_6x8, White);
     ssd1306_UpdateScreen();
 
+    HAL_Delay(2000);
+
+    ssd1306_Fill(Black);
+    ssd1306_UpdateScreen();
     last_update_ms = HAL_GetTick();
 }
 

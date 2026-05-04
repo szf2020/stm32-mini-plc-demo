@@ -1,0 +1,22 @@
+13:57:07 **** Incremental Build of configuration Debug for project modbus-master ****
+make -j16 all 
+arm-none-eabi-gcc -o "modbus-master.elf" @"objects.list"   -mcpu=cortex-m3 -T"C:\Projects\stm32-mini-plc\firmware\modbus-master\STM32F103C8TX_FLASH.ld" --specs=nosys.specs -Wl,-Map="modbus-master.map" -Wl,--gc-sections -static --specs=nano.specs -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: modbus-master.elf
+ 
+arm-none-eabi-size  modbus-master.elf 
+arm-none-eabi-objdump -h -S modbus-master.elf  > "modbus-master.list"
+arm-none-eabi-objcopy  -O ihex modbus-master.elf  "modbus-master.hex"
+   text	   data	    bss	    dec	    hex	filename
+  12520	    104	   2048	  14672	   3950	modbus-master.elf
+arm-none-eabi-objcopy  -O binary modbus-master.elf  "modbus-master.bin"
+Finished building: default.size.stdout
+ 
+Finished building: modbus-master.bin
+Finished building: modbus-master.hex
+ 
+ 
+Finished building: modbus-master.list
+ 
+
+13:57:11 Build Finished. 0 errors, 0 warnings. (took 4s.186ms)
+

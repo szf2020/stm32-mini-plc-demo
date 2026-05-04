@@ -4,6 +4,6 @@
 ../Src/uart_console.c:87:6:uart_console_handle_rx	13
 ../Src/uart_console.c:126:6:uart_console_on_rx	1
 ../Src/uart_console.c:132:13:process_command	50
-../Src/uart_console.c:351:6:uart_console_poll	2
-../Src/uart_console.c:360:16:uart_get_active_program	1
-../Src/uart_console.c:364:10:uart_get_active_program_len	1
+../Src/uart_console.c:351:6:uart_console_poll	3
+../Src/uart_console.c:381:16:uart_get_active_program	1
+../Src/uart_console.c:385:10:uart_get_active_program_len	1

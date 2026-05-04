@@ -283,16 +283,25 @@ class LadderEditor(ctk.CTk):
                                          width=100, command=self._on_connect)
         self.connect_btn.pack(side="left", padx=10)
 
-        ctk.CTkButton(self.status_frame, text="Compile", width=100,
-                      command=self._on_compile).pack(side="left", padx=5)
+        ctk.CTkButton(self.status_frame, text="Compile", width=90,
+                      command=self._on_compile).pack(side="left", padx=4)
         ctk.CTkButton(self.status_frame, text="Download", width=100,
                       fg_color="#2a7a2a", hover_color="#1f5f1f",
-                      command=self._on_download).pack(side="left", padx=5)
+                      command=self._on_download).pack(side="left", padx=4)
+
+        # Save-to-EEPROM slot dropdown + button
+        ctk.CTkLabel(self.status_frame, text="Slot:").pack(side="left", padx=(10, 2))
+        self.slot_var = ctk.StringVar(value="0")
+        ctk.CTkComboBox(self.status_frame, values=["0", "1", "2", "3"],
+                        variable=self.slot_var, width=55).pack(side="left", padx=2)
+        ctk.CTkButton(self.status_frame, text="Save EEPROM", width=120,
+                      fg_color="#2a4a7a", hover_color="#1f3a6a",
+                      command=self._on_save_to_slot).pack(side="left", padx=4)
 
         self.monitor_btn = ctk.CTkButton(self.status_frame, text="Monitor: OFF",
-                                          width=130, fg_color="#666666",
+                                          width=120, fg_color="#666666",
                                           command=self._on_toggle_monitor)
-        self.monitor_btn.pack(side="left", padx=5)
+        self.monitor_btn.pack(side="left", padx=4)
 
         self.status_label = ctk.CTkLabel(self.status_frame, text="Ready", text_color="gray")
         self.status_label.pack(side="right", padx=15)
@@ -421,7 +430,6 @@ class LadderEditor(ctk.CTk):
         preset = elem.get("preset", None)
         value = elem.get("value", None)
 
-        # Determine color based on monitoring state
         if self.monitoring:
             is_active = self.live_state.get(addr, False) is True
             if is_active:
@@ -565,7 +573,7 @@ class LadderEditor(ctk.CTk):
         self._redraw_canvas()
 
     # ============================================================
-    # Save / Load
+    # Save / Load JSON files
     # ============================================================
     def _on_save(self):
         path = filedialog.asksaveasfilename(defaultextension=".json",
@@ -633,7 +641,6 @@ class LadderEditor(ctk.CTk):
                 bytecode.extend([OPCODES["LDEQ"], addr, val & 0xFF, (val >> 8) & 0xFF])
 
             # Step 2: emit all parallel branches as OR/ORN
-            # Equals not supported in parallel branches (no OREQ opcode)
             for branch_idx in range(1, len(branches)):
                 branch = branches[branch_idx]
                 has_equals = any(e["type"] == "Equals" for e in branch["elements"])
@@ -664,8 +671,7 @@ class LadderEditor(ctk.CTk):
             # Step 3: emit remaining main inputs as AND/ANDN
             for elem in main_inputs[1:]:
                 if elem["type"] == "Equals":
-                    return None, ("Equals element must be the first input on a rung "
-                                  "(no AND-equals opcode)")
+                    return None, ("Equals element must be the first input on a rung")
                 addr = encode_addr(elem["addr"])
                 if elem["type"] == "Contact":
                     bytecode.extend([OPCODES["AND"], addr])
@@ -819,6 +825,49 @@ class LadderEditor(ctk.CTk):
 
     def _set_status(self, text):
         self.after(0, lambda: self.status_label.configure(text=text))
+
+    # ============================================================
+    # Save current program to EEPROM slot on STM32
+    # ============================================================
+    def _on_save_to_slot(self):
+        if not (self.serial_port and self.serial_port.is_open):
+            messagebox.showwarning("Not connected", "Connect to STM32 first")
+            return
+        slot = self.slot_var.get()
+        threading.Thread(target=self._save_slot_worker,
+                         args=(slot,), daemon=True).start()
+
+    def _save_slot_worker(self, slot):
+        try:
+            if not self.serial_lock.acquire(timeout=2.0):
+                self._set_status("ERROR: serial busy")
+                return
+            try:
+                ser = self.serial_port
+                self._set_status(f"Saving to EEPROM slot {slot}...")
+                ser.reset_input_buffer()
+                ser.write(f"save {slot}\r\n".encode())
+
+                deadline = time.time() + 3.0
+                response = b""
+                while time.time() < deadline:
+                    if ser.in_waiting:
+                        response += ser.read(ser.in_waiting)
+                        if b"saved" in response.lower() or b"OK" in response:
+                            break
+                    time.sleep(0.05)
+
+                if b"saved" in response.lower() or b"OK" in response:
+                    self._set_status(f"\u2713 Saved to EEPROM slot {slot}")
+                    print(f"[save_slot] Slot {slot} saved")
+                else:
+                    self._set_status(f"ERROR: No confirmation from STM32")
+                    print(f"[save_slot] No confirmation. Got: {response}")
+            finally:
+                self.serial_lock.release()
+        except Exception as e:
+            self._set_status(f"ERROR: {e}")
+            print(f"[save_slot] Exception: {e}")
 
     # ============================================================
     # Live monitoring
