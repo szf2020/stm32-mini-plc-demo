@@ -1,15 +1,16 @@
 #include <WiFi.h>
 #include <WebServer.h>
+#include <ESPmDNS.h>
 
 // ============================================================
-// WiFi credentials — CHANGE THESE
+// WiFi credentials (Your Hotspot)
 // ============================================================
 const char* ssid     = "DESKTOP-KMKR958 2310";
 const char* password = "2428eG7/";
 
 WebServer server(80);
 
-// PLC state — updated from STM32 UART
+// PLC state variables
 int plc_inputs[8]  = {0};
 int plc_outputs[4] = {0};
 unsigned long plc_scan = 0;
@@ -17,7 +18,7 @@ unsigned long last_update = 0;
 bool plc_connected = false;
 
 // ============================================================
-// MODIFIED: Industrial SCADA / HMI Dashboard Aesthetic
+// ORIGINAL INDUSTRIAL SCADA / HMI DASHBOARD AESTHETIC
 // ============================================================
 const char* html_page = R"rawhtml(
 <!DOCTYPE html>
@@ -148,7 +149,7 @@ const char* html_page = R"rawhtml(
     width: 44px; 
     height: 44px; 
     border-radius: 50%; 
-    border: 4px solid #111; /* Dark plastic rim */
+    border: 4px solid #111; 
     box-shadow: 0 2px 4px rgba(255,255,255,0.1), inset 0 3px 6px rgba(0,0,0,0.8);
     transition: all 0.1s; 
   }
@@ -272,7 +273,6 @@ function update() {
     }
     document.getElementById('outputs').innerHTML = qH;
     
-    // Format scan count to look like a digital 6-digit display
     document.getElementById('scan').textContent = padZero(d.S, 6);
     
     let sCont = document.getElementById('status-container');
@@ -301,110 +301,85 @@ update();
 </html>
 )rawhtml";
 
-void parse_plc_json(String line) {
-  int idx = line.indexOf("JSON:");
-  if (idx < 0) return;
-
-  String json = line.substring(idx + 5);
-
-  int i_start = json.indexOf("\"I\":[") + 5;
-  if (i_start < 5) return;
-  for (int i = 0; i < 8; i++) {
-    plc_inputs[i] = json.charAt(i_start) == '1' ? 1 : 0;
-    i_start += 2;
-  }
-
-  int q_start = json.indexOf("\"Q\":[") + 5;
-  if (q_start < 5) return;
-  for (int i = 0; i < 4; i++) {
-    plc_outputs[i] = json.charAt(q_start) == '1' ? 1 : 0;
-    q_start += 2;
-  }
-
-  int s_start = json.indexOf("\"S\":") + 4;
-  if (s_start >= 4) {
-    plc_scan = json.substring(s_start).toInt();
-  }
-
-  last_update = millis();
-  plc_connected = true;
-}
-
-void handle_root() {
-  server.send(200, "text/html", html_page);
-}
-
+// ============================================================
+// Send Data to Browser
+// ============================================================
 void handle_state() {
   String json = "{\"I\":[";
-  for (int i = 0; i < 8; i++) {
-    json += plc_inputs[i];
-    if (i < 7) json += ",";
-  }
+  for (int i=0; i<8; i++) json += String(plc_inputs[i]) + (i<7?",":"");
   json += "],\"Q\":[";
-  for (int i = 0; i < 4; i++) {
-    json += plc_outputs[i];
-    if (i < 3) json += ",";
-  }
-  json += "],\"S\":";
-  json += plc_scan;
-  json += ",\"live\":";
-  json += plc_connected ? "true" : "false";
-  json += "}";
+  for (int i=0; i<4; i++) json += String(plc_outputs[i]) + (i<3?",":"");
+  json += "],\"S\":" + String(plc_scan) + ",\"live\":" + (plc_connected?"true":"false") + "}";
   server.send(200, "application/json", json);
 }
 
-void handle_not_found() {
-  server.send(404, "text/plain", "Not found");
-}
-
+// ============================================================
+// Setup
+// ============================================================
 void setup() {
   Serial.begin(115200);
-  // GPIO16 = RX2 listens to STM32 PA9 at 115200 baud
-  Serial2.begin(115200, SERIAL_8N1, 16, 17);
+  Serial2.begin(115200, SERIAL_8N1, 16, 17); 
+  
+  // CRITICAL PERFORMANCE FIX: Prevents Serial2 from freezing the web server
+  Serial2.setTimeout(10); 
 
-  Serial.println("\n============================");
-  Serial.println("  STM32 Mini PLC Dashboard");
-  Serial.println("============================");
+  Serial.println("\n==================================");
+  Serial.println("  Starting ESP32 HMI (Hotspot Mode)");
+  Serial.println("==================================");
 
-  Serial.print("Connecting to WiFi: ");
-  Serial.println(ssid);
   WiFi.begin(ssid, password);
-
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
-    delay(500);
-    Serial.print(".");
-    attempts++;
+  Serial.print("Connecting to hotspot");
+  
+  int timeout = 0;
+  while (WiFi.status() != WL_CONNECTED && timeout < 30) {
+    delay(500); 
+    Serial.print("."); 
+    timeout++;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi connected!");
-    Serial.print("IP address: http://");
+    Serial.println("\n\n--- SUCCESS! ---");
+    Serial.print("Your phone assigned this IP: http://"); 
     Serial.println(WiFi.localIP());
-    Serial.println("Open this URL in any browser on the same WiFi");
+    
+    if (MDNS.begin("plc")) {
+      Serial.println("You can also access it at:   http://plc.local");
+    }
   } else {
-    Serial.println("\nWiFi connection failed");
-    Serial.println("Check SSID/password in code, restart board");
+    Serial.println("\nFailed to connect. Check hotspot password!");
   }
 
-  server.on("/", handle_root);
+  server.on("/", []() { server.send(200, "text/html", html_page); });
   server.on("/state", handle_state);
-  server.onNotFound(handle_not_found);
   server.begin();
-  Serial.println("Web server started on port 80");
 }
 
+// ============================================================
+// Main Loop
+// ============================================================
 void loop() {
-  server.handleClient();
+  server.handleClient(); // Handles web requests
 
-  if (Serial2.available()) {
+  // Read data from STM32 smoothly
+  if (Serial2.available() > 0) {
     String line = Serial2.readStringUntil('\n');
     line.trim();
-    if (line.startsWith("JSON:")) {
-      parse_plc_json(line);
+    if (line.indexOf("JSON:") != -1) {
+      int i_start = line.indexOf("\"I\":[") + 5;
+      for (int i=0; i<8; i++) plc_inputs[i] = (line.charAt(i_start + (i*2)) == '1');
+      
+      int q_start = line.indexOf("\"Q\":[") + 5;
+      for (int i=0; i<4; i++) plc_outputs[i] = (line.charAt(q_start + (i*2)) == '1');
+      
+      int s_start = line.indexOf("\"S\":") + 4;
+      plc_scan = line.substring(s_start).toInt();
+      
+      last_update = millis();
+      plc_connected = true;
     }
   }
-
+  
+  // Timeout if STM32 stops talking for 3 seconds
   if (millis() - last_update > 3000) {
     plc_connected = false;
   }

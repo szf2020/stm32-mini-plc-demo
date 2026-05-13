@@ -22,7 +22,7 @@ void oled_display_init(void) {
     ssd1306_SetCursor(20, 38);
     ssd1306_WriteString("Initializing...", Font_6x8, White);
     ssd1306_SetCursor(0, 54);
-    ssd1306_WriteString("by Team ", Font_6x8, White);
+    ssd1306_WriteString(" BY TEAM ", Font_6x8, White);
     ssd1306_UpdateScreen();
 
     HAL_Delay(2000);
@@ -73,9 +73,13 @@ void oled_display_update(void) {
     snprintf(buf, sizeof(buf), "Scan:%lu", scan_get_count());
     ssd1306_WriteString(buf, Font_7x10, White);
 
-    // Status row (small font)
+    // Status row (Updated per your request)
     ssd1306_SetCursor(2, 55);
-    ssd1306_WriteString("Running", Font_6x8, White);
+    if (scan_get_run_mode()) {
+        ssd1306_WriteString("RUN ", Font_7x10, White);
+    } else {
+        ssd1306_WriteString("STOP", Font_7x10, White);
+    }
 
     ssd1306_UpdateScreen();
 }

@@ -3,6 +3,7 @@
 #include "scan_engine.h"
 #include "main.h"
 #include <string.h>
+#include <stdio.h>
 
 extern UART_HandleTypeDef huart2;
 
@@ -46,7 +47,18 @@ static volatile uint32_t last_rx_tick = 0;
 void modbus_init(void) {
     rs485_rx_mode();
     rx_len = 0;
-    HAL_UART_Receive_IT(&huart2, &rx_byte_raw, 1);
+
+    HAL_StatusTypeDef st = HAL_UART_Receive_IT(&huart2, &rx_byte_raw, 1);
+    printf("MB: init RX_IT=%d, RxState=%d\r\n", st, huart2.RxState);
+
+    // SELF-TEST: send a byte from UART2 TX, see if it loops back to RX
+    HAL_Delay(100);
+    rs485_tx_mode();    // Doesn't matter, MAX485 is disconnected
+    uint8_t test = 0xAA;
+    HAL_UART_Transmit(&huart2, &test, 1, 100);
+    HAL_Delay(50);
+    rs485_rx_mode();
+    printf("MB: self-test sent 0xAA, rx_len=%d\r\n", rx_len);
 }
 
 void modbus_rx_byte(uint8_t byte) {
@@ -69,17 +81,32 @@ static void send_response(uint8_t *buf, uint8_t len) {
     buf[len]     = crc & 0xFF;
     buf[len + 1] = (crc >> 8) & 0xFF;
 
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+
     rs485_tx_mode();
+    HAL_Delay(2);
+
     HAL_UART_Transmit(&huart2, buf, len + 2, 100);
-    HAL_Delay(1);
+
+    while (__HAL_UART_GET_FLAG(&huart2, UART_FLAG_TC) == RESET);
+    HAL_Delay(3);
+
     rs485_rx_mode();
+
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+
+    printf("MB TX: ");
+    for (int i = 0; i < len + 2; i++) {
+        printf("%02X ", buf[i]);
+    }
+    printf("\r\n");
 }
 
 // ============================================================
 // Exception response
 // ============================================================
 static void send_exception(uint8_t func_code, uint8_t exception_code) {
-    uint8_t buf[3];
+    uint8_t buf[5];
     buf[0] = MODBUS_SLAVE_ADDRESS;
     buf[1] = func_code | 0x80;
     buf[2] = exception_code;
@@ -88,8 +115,6 @@ static void send_exception(uint8_t func_code, uint8_t exception_code) {
 
 // ============================================================
 // FC01 — Read Coils
-// Coils 0-3 = Q0-Q3 outputs
-// Coils 4-7 = I0-I3 inputs
 // ============================================================
 static void handle_read_coils(uint8_t *frame) {
     uint16_t start_addr = ((uint16_t)frame[2] << 8) | frame[3];
@@ -103,7 +128,7 @@ static void handle_read_coils(uint8_t *frame) {
     uint8_t buf[6];
     buf[0] = MODBUS_SLAVE_ADDRESS;
     buf[1] = FC_READ_COILS;
-    buf[2] = 1;  // 1 byte of coil data
+    buf[2] = 1;
 
     uint8_t coil_byte = 0;
     for (uint8_t i = 0; i < quantity; i++) {
@@ -123,7 +148,6 @@ static void handle_read_coils(uint8_t *frame) {
 
 // ============================================================
 // FC05 — Write Single Coil
-// Coils 0-3 = Q0-Q3 outputs only
 // ============================================================
 static void handle_write_single_coil(uint8_t *frame) {
     uint16_t coil_addr  = ((uint16_t)frame[2] << 8) | frame[3];
@@ -140,8 +164,7 @@ static void handle_write_single_coil(uint8_t *frame) {
 
     g_io.digital_out[coil_addr] = (coil_value == COIL_ON) ? 1 : 0;
 
-    // Echo the request back as response (Modbus spec)
-    uint8_t buf[6];
+    uint8_t buf[8];
     buf[0] = MODBUS_SLAVE_ADDRESS;
     buf[1] = FC_WRITE_SINGLE_COIL;
     buf[2] = frame[2];
@@ -153,8 +176,6 @@ static void handle_write_single_coil(uint8_t *frame) {
 
 // ============================================================
 // FC03 — Read Holding Registers
-// Register 0 = scan count low word
-// Register 1 = scan count high word
 // ============================================================
 static void handle_read_holding_regs(uint8_t *frame) {
     uint16_t start_addr = ((uint16_t)frame[2] << 8) | frame[3];
@@ -165,14 +186,14 @@ static void handle_read_holding_regs(uint8_t *frame) {
         return;
     }
 
-    uint8_t buf[9];
+    uint8_t buf[10];
     buf[0] = MODBUS_SLAVE_ADDRESS;
     buf[1] = FC_READ_HOLDING_REGS;
     buf[2] = (uint8_t)(quantity * 2);
 
-    uint32_t scan  = scan_get_count();
-    uint16_t reg0  = (uint16_t)(scan & 0xFFFF);
-    uint16_t reg1  = (uint16_t)((scan >> 16) & 0xFFFF);
+    uint32_t scan = scan_get_count();
+    uint16_t reg0 = (uint16_t)(scan & 0xFFFF);
+    uint16_t reg1 = (uint16_t)((scan >> 16) & 0xFFFF);
 
     uint8_t idx = 3;
     for (uint16_t i = 0; i < quantity; i++) {
@@ -185,26 +206,49 @@ static void handle_read_holding_regs(uint8_t *frame) {
 }
 
 // ============================================================
-// Main poll — call from main loop every cycle
+// Main poll — WITH DEBUG PRINTS
 // ============================================================
 void modbus_poll(void) {
+    static uint32_t last_debug = 0;
+
+    // Heartbeat — prints rx_len every 2 seconds
+    if (HAL_GetTick() - last_debug > 2000) {
+        last_debug = HAL_GetTick();
+        printf("MB poll: rx_len=%d\r\n", rx_len);
+    }
+
     if (rx_len == 0) return;
     if ((HAL_GetTick() - last_rx_tick) < MODBUS_FRAME_TIMEOUT_MS) return;
 
     uint8_t len = rx_len;
     rx_len = 0;
 
-    if (len < 4) return;
+    printf("MB RX: len=%d ", len);
+    for (int i = 0; i < len; i++) {
+        printf("%02X ", rx_buf[i]);
+    }
+    printf("\r\n");
 
-    // Check slave address
-    if (rx_buf[0] != MODBUS_SLAVE_ADDRESS) return;
+    if (len < 4) {
+        printf("MB ERR: too short\r\n");
+        return;
+    }
 
-    // Verify CRC
-    uint16_t received_crc   = ((uint16_t)rx_buf[len-1] << 8) | rx_buf[len-2];
+    if (rx_buf[0] != MODBUS_SLAVE_ADDRESS) {
+        printf("MB ERR: wrong addr %d\r\n", rx_buf[0]);
+        return;
+    }
+
+    uint16_t received_crc = ((uint16_t)rx_buf[len-1] << 8) | rx_buf[len-2];
     uint16_t calculated_crc = crc16(rx_buf, len - 2);
-    if (received_crc != calculated_crc) return;
 
-    // Dispatch
+    if (received_crc != calculated_crc) {
+        printf("MB ERR: CRC fail\r\n");
+        return;
+    }
+
+    printf("MB OK: FC=%02X\r\n", rx_buf[1]);
+
     switch (rx_buf[1]) {
         case FC_READ_COILS:
             handle_read_coils(rx_buf);

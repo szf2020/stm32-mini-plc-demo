@@ -1,2 +1,2 @@
 ../Src/oled_display.c:13:6:oled_display_init	1
-../Src/oled_display.c:35:6:oled_display_update	2
+../Src/oled_display.c:35:6:oled_display_update	3

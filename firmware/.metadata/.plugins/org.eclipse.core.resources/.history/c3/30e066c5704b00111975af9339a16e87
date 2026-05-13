@@ -1,0 +1,81 @@
+#include "oled_display.h"
+#include "ssd1306.h"
+#include "ssd1306_fonts.h"
+#include "io_image.h"
+#include "scan_engine.h"
+#include "stm32f1xx_hal.h"
+#include <stdio.h>
+#include <string.h>
+
+static uint32_t last_update_ms = 0;
+#define UPDATE_INTERVAL_MS 200  // 5 Hz refresh
+
+void oled_display_init(void) {
+    ssd1306_Init();
+
+    // Boot screen
+    ssd1306_Fill(Black);
+    ssd1306_SetCursor(10, 5);
+    ssd1306_WriteString("STM32 Mini PLC", Font_7x10, White);
+    ssd1306_SetCursor(40, 22);
+    ssd1306_WriteString("v1.0", Font_7x10, White);
+    ssd1306_SetCursor(20, 38);
+    ssd1306_WriteString("Initializing...", Font_6x8, White);
+    ssd1306_SetCursor(0, 54);
+    ssd1306_WriteString(" BY TEAM ", Font_6x8, White);
+    ssd1306_UpdateScreen();
+
+    HAL_Delay(2000);
+
+    ssd1306_Fill(Black);
+    ssd1306_UpdateScreen();
+    last_update_ms = HAL_GetTick();
+}
+
+void oled_display_update(void) {
+    uint32_t now = HAL_GetTick();
+    if (now - last_update_ms < UPDATE_INTERVAL_MS) {
+        return;
+    }
+    last_update_ms = now;
+
+    char buf[32];
+    ssd1306_Fill(Black);
+
+    // Title
+    ssd1306_SetCursor(2, 0);
+    ssd1306_WriteString("STM32 Mini PLC", Font_7x10, White);
+
+    // Inputs row: "I:01010101"
+    ssd1306_SetCursor(2, 14);
+    snprintf(buf, sizeof(buf), "I:%d%d%d%d%d%d%d%d",
+             g_io.digital_in[0] ? 1 : 0,
+             g_io.digital_in[1] ? 1 : 0,
+             g_io.digital_in[2] ? 1 : 0,
+             g_io.digital_in[3] ? 1 : 0,
+             g_io.digital_in[4] ? 1 : 0,
+             g_io.digital_in[5] ? 1 : 0,
+             g_io.digital_in[6] ? 1 : 0,
+             g_io.digital_in[7] ? 1 : 0);
+    ssd1306_WriteString(buf, Font_7x10, White);
+
+    // Outputs row: "Q:0001"
+    ssd1306_SetCursor(2, 28);
+    snprintf(buf, sizeof(buf), "Q:%d%d%d%d",
+             g_io.digital_out[0] ? 1 : 0,
+             g_io.digital_out[1] ? 1 : 0,
+             g_io.digital_out[2] ? 1 : 0,
+             g_io.digital_out[3] ? 1 : 0);
+    ssd1306_WriteString(buf, Font_7x10, White);
+
+    // Scan count row
+    ssd1306_SetCursor(2, 42);
+    snprintf(buf, sizeof(buf), "Scan:%lu", scan_get_count());
+    ssd1306_WriteString(buf, Font_7x10, White);
+
+    // Status row (small font)
+    ssd1306_SetCursor(2, 55);
+    ssd1306_WriteString("Running", Font_6x8, White);
+
+    ssd1306_UpdateScreen();
+}

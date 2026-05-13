@@ -900,6 +900,8 @@ class LadderEditor(ctk.CTk):
                 if self.serial_lock.acquire(timeout=0.5):
                     try:
                         self.serial_port.reset_input_buffer()
+                        time.sleep(0.05)
+                        self.serial_port.reset_input_buffer()
                         self.serial_port.write(b"mon\r\n")
 
                         deadline = time.time() + 0.4
@@ -931,17 +933,24 @@ class LadderEditor(ctk.CTk):
             time.sleep(0.2)
 
     def _parse_mon(self, text):
-        idx_mon = text.find("MON I=")
-        if idx_mon < 0:
+        # Skip any JSON lines — only look for MON response
+        lines = text.split('\n')
+        mon_line = None
+        for line in lines:
+            line = line.strip()
+            if line.startswith('MON I='):
+                mon_line = line
+                break
+        
+        if mon_line is None:
             return None
         try:
-            line = text[idx_mon:].split("\n")[0].split("\r")[0]
-            i_idx = line.find("I=")
-            i_part = line[i_idx + 2 : i_idx + 10]
-            q_idx = line.find("Q=")
-            q_part = line[q_idx + 2 : q_idx + 6]
-            scan_idx = line.find("SCAN=")
-            scan_str = line[scan_idx + 5 :].strip()
+            i_idx = mon_line.find("I=")
+            i_part = mon_line[i_idx + 2: i_idx + 10]
+            q_idx = mon_line.find("Q=")
+            q_part = mon_line[q_idx + 2: q_idx + 6]
+            scan_idx = mon_line.find("SCAN=")
+            scan_str = mon_line[scan_idx + 5:].strip()
 
             if len(i_part) < 8 or len(q_part) < 4:
                 return None
@@ -949,6 +958,7 @@ class LadderEditor(ctk.CTk):
                 return None
             if not all(c in "01" for c in q_part):
                 return None
+
             scan = 0
             try:
                 scan = int(scan_str)

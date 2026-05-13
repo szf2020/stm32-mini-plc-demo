@@ -3,6 +3,9 @@
 	<item key="hasShownOverlayPopupBefore" value="true"/>
 	<item key="replaceBarOpen" value="false"/>
 	<list key="searchhistory">
+		<item value="display status"/>
+		<item value="scan_get_count"/>
+		<item value="static uint8_t plc_run_mode = 1"/>
 		<item value="void oled_display_init()"/>
 		<item value="oled_display_init()"/>
 		<item value="void uart_console_poll()"/>
@@ -15,8 +18,5 @@
 		<item value="#defin"/>
 		<item value="#define IND_OUT_1_"/>
 		<item value="#define IND_OUT_1_Pin GPIO_PIN_7"/>
-		<item value="HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2,"/>
-		<item value="HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, ...);"/>
-		<item value="HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, ...); "/>
 	</list>
 </section>

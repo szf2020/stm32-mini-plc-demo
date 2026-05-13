@@ -28,15 +28,18 @@ static uint16_t uploaded_program_len = 0;
 
 // Upload state machine
 typedef enum {
-    UPLOAD_IDLE,            // not in upload mode
-    UPLOAD_RECEIVING_BYTES  // collecting raw bytes after UPLOAD command
+    UPLOAD_IDLE,
+    UPLOAD_RECEIVING_BYTES
 } upload_state_t;
 
 static upload_state_t upload_state = UPLOAD_IDLE;
 static uint16_t upload_expected = 0;
 static uint16_t upload_received = 0;
 
-// printf redirect — sends each character via UART
+// Activity tracking for JSON suppression
+static volatile uint32_t last_activity_ms = 0;
+
+// printf redirect
 int __io_putchar(int ch) {
     HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
     return ch;
@@ -54,9 +57,9 @@ static void print_banner(void) {
 void uart_console_init(void) {
     rx_index = 0;
     cmd_ready = 0;
+    last_activity_ms = 0;
     HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
 
-    // Try to auto-load a program from EEPROM
     uint8_t boot_slot;
     if (eeprom_get_boot_slot(&boot_slot)) {
         uint16_t len;
@@ -65,13 +68,11 @@ void uart_console_init(void) {
             uploaded_program_len = len;
             active_program = uploaded_program;
             active_program_len = uploaded_program_len;
-            // Banner will mention this
         }
     }
 
     print_banner();
 
-    // Print boot status after banner
     uint8_t boot_slot2;
     if (eeprom_get_boot_slot(&boot_slot2)) {
         if (uploaded_program_len > 0) {
@@ -83,9 +84,11 @@ void uart_console_init(void) {
     }
     printf("> ");
 }
-// Called inside the UART RX interrupt (via HAL_UART_RxCpltCallback)
+
 void uart_console_handle_rx(uint8_t byte) {
-    // If we're in upload-bytes mode, treat this byte as raw program data
+    // Track any incoming byte as activity
+    last_activity_ms = HAL_GetTick();
+
     if (upload_state == UPLOAD_RECEIVING_BYTES) {
         if (upload_received < upload_expected
             && upload_received < UPLOADED_PROGRAM_MAX_SIZE) {
@@ -94,14 +97,12 @@ void uart_console_handle_rx(uint8_t byte) {
         if (upload_received >= upload_expected) {
             uploaded_program_len = upload_received;
             upload_state = UPLOAD_IDLE;
-            // Tell PC we got it
             printf("OK %u\r\n", (unsigned)upload_received);
             printf("> ");
         }
-        return;  // do NOT echo or treat as command
+        return;
     }
 
-    // Normal command-line mode
     if (cmd_ready) return;
 
     HAL_UART_Transmit(&huart1, &byte, 1, HAL_MAX_DELAY);
@@ -122,14 +123,15 @@ void uart_console_handle_rx(uint8_t byte) {
     }
 }
 
-// Wrapper called from HAL_UART_RxCpltCallback in main.c
 void uart_console_on_rx(void) {
     uart_console_handle_rx(rx_byte);
-    // Re-arm the receive
     HAL_UART_Receive_IT(&huart1, &rx_byte, 1);
 }
 
 static void process_command(const char *cmd) {
+    // Mark activity when processing a command
+    last_activity_ms = HAL_GetTick();
+
     if (strcmp(cmd, "help") == 0) {
         printf("\r\nCommands:\r\n");
         printf("  help            - this message\r\n");
@@ -138,8 +140,8 @@ static void process_command(const char *cmd) {
         printf("  load timer      - run 2-second timer demo\r\n");
         printf("  load echo       - run echo (input -> output)\r\n");
         printf("  load not        - run NOT gate\r\n");
-        printf("  load multi      - 4-channel echo (each input drives matching output)\r\n");
-        printf("  load chase      - LED chase (press I0 to advance)\r\n");
+        printf("  load multi      - 4-channel echo\r\n");
+        printf("  load chase      - LED chase\r\n");
         printf("  load counter    - run 5-press counter\r\n");
         printf("  upload N        - upload N bytes of bytecode (binary)\r\n");
         printf("  run             - switch to last uploaded program\r\n");
@@ -156,14 +158,10 @@ static void process_command(const char *cmd) {
     else if (strcmp(cmd, "status") == 0) {
         printf("\r\nPLC Status:\r\n");
         printf("  Inputs:  ");
-        for (int i = 0; i < 8; i++) {
-            printf("I%d=%d ", i, g_io.digital_in[i]);
-        }
+        for (int i = 0; i < 8; i++) printf("I%d=%d ", i, g_io.digital_in[i]);
         printf("\r\n");
         printf("  Outputs: ");
-        for (int i = 0; i < 4; i++) {
-            printf("Q%d=%d ", i, g_io.digital_out[i]);
-        }
+        for (int i = 0; i < 4; i++) printf("Q%d=%d ", i, g_io.digital_out[i]);
         printf("\r\n");
         printf("  Scan count: %lu\r\n", scan_get_count());
     }
@@ -203,157 +201,157 @@ static void process_command(const char *cmd) {
         printf("\r\nLoaded: counter\r\n");
     }
     else if (strcmp(cmd, "reset") == 0) {
-        for (int i = 0; i < PLC_DIGITAL_OUTPUT_COUNT; i++) {
-            g_io.digital_out[i] = 0;
-        }
+        for (int i = 0; i < PLC_DIGITAL_OUTPUT_COUNT; i++) g_io.digital_out[i] = 0;
         printf("\r\nI/O reset.\r\n");
     }
     else if (strncmp(cmd, "upload ", 7) == 0) {
-            // Parse the byte count from "upload N"
-            int n = atoi(cmd + 7);
-            if (n <= 0 || n > UPLOADED_PROGRAM_MAX_SIZE) {
-                printf("\r\nERROR: invalid size (max %d)\r\n",
-                       UPLOADED_PROGRAM_MAX_SIZE);
+        int n = atoi(cmd + 7);
+        if (n <= 0 || n > UPLOADED_PROGRAM_MAX_SIZE) {
+            printf("\r\nERROR: invalid size (max %d)\r\n", UPLOADED_PROGRAM_MAX_SIZE);
+            return;
+        }
+        upload_expected = (uint16_t)n;
+        upload_received = 0;
+        upload_state = UPLOAD_RECEIVING_BYTES;
+        printf("\r\nREADY\r\n");
+    }
+    else if (strcmp(cmd, "run") == 0) {
+        if (uploaded_program_len == 0) {
+            printf("\r\nERROR: no program uploaded yet\r\n");
+        } else {
+            active_program = uploaded_program;
+            active_program_len = uploaded_program_len;
+            printf("\r\nRUNNING %u-byte program\r\n", (unsigned)uploaded_program_len);
+        }
+    }
+    else if (strcmp(cmd, "program") == 0) {
+        printf("\r\nUploaded program (%u bytes):\r\n", (unsigned)uploaded_program_len);
+        for (uint16_t i = 0; i < uploaded_program_len; i++) {
+            printf("%02X ", uploaded_program[i]);
+            if ((i + 1) % 8 == 0) printf("\r\n");
+        }
+        printf("\r\n");
+    }
+    else if (strcmp(cmd, "eetest") == 0) {
+        printf("\r\nTesting EEPROM...\r\n");
+        if (eeprom_test()) {
+            printf("EEPROM OK\r\n");
+        } else {
+            printf("EEPROM FAIL — check wiring\r\n");
+        }
+    }
+    else if (strncmp(cmd, "save ", 5) == 0) {
+        int slot = atoi(cmd + 5);
+        if (slot < 0 || slot >= EEPROM_SLOT_COUNT) {
+            printf("\r\nERROR: slot must be 0-%d\r\n", EEPROM_SLOT_COUNT - 1);
+            return;
+        }
+        if (uploaded_program_len == 0) {
+            printf("\r\nERROR: no program uploaded yet\r\n");
+            return;
+        }
+        printf("\r\nSaving %u bytes to slot %d...\r\n",
+               (unsigned)uploaded_program_len, slot);
+        if (eeprom_save_slot(slot, uploaded_program, uploaded_program_len)) {
+            printf("OK saved\r\n");
+        } else {
+            printf("ERROR save failed\r\n");
+        }
+    }
+    else if (strncmp(cmd, "loadslot ", 9) == 0) {
+        int slot = atoi(cmd + 9);
+        if (slot < 0 || slot >= EEPROM_SLOT_COUNT) {
+            printf("\r\nERROR: slot must be 0-%d\r\n", EEPROM_SLOT_COUNT - 1);
+            return;
+        }
+        uint16_t len;
+        if (!eeprom_load_slot((uint8_t)slot, uploaded_program, &len,
+                              UPLOADED_PROGRAM_MAX_SIZE)) {
+            printf("\r\nERROR slot %d empty or invalid\r\n", slot);
+            return;
+        }
+        uploaded_program_len = len;
+        active_program = uploaded_program;
+        active_program_len = uploaded_program_len;
+        printf("\r\nLoaded %u bytes from slot %d, running\r\n",
+               (unsigned)len, slot);
+    }
+    else if (strcmp(cmd, "slots") == 0) {
+        printf("\r\nSlot status:\r\n");
+        for (uint8_t i = 0; i < EEPROM_SLOT_COUNT; i++) {
+            if (eeprom_slot_is_valid(i)) {
+                uint16_t len = eeprom_slot_length(i);
+                printf("  Slot %u: %u bytes\r\n", i, (unsigned)len);
+            } else {
+                printf("  Slot %u: empty\r\n", i);
+            }
+        }
+    }
+    else if (strncmp(cmd, "boot ", 5) == 0) {
+        if (strcmp(cmd + 5, "off") == 0 || strcmp(cmd + 5, "none") == 0) {
+            if (eeprom_clear_boot_slot()) {
+                printf("\r\nAuto-boot disabled\r\n");
+            } else {
+                printf("\r\nERROR clear failed\r\n");
+            }
+        } else {
+            int slot = atoi(cmd + 5);
+            if (slot < 0 || slot >= EEPROM_SLOT_COUNT) {
+                printf("\r\nERROR: slot must be 0-%d (or 'off')\r\n",
+                       EEPROM_SLOT_COUNT - 1);
                 return;
             }
-            upload_expected = (uint16_t)n;
-            upload_received = 0;
-            upload_state = UPLOAD_RECEIVING_BYTES;
-            printf("\r\nREADY\r\n");
-            // Note: we do NOT print "> " here because the next bytes
-            // are raw bytecode, not a command line
-        }
-        else if (strcmp(cmd, "run") == 0) {
-            if (uploaded_program_len == 0) {
-                printf("\r\nERROR: no program uploaded yet\r\n");
+            if (!eeprom_slot_is_valid((uint8_t)slot)) {
+                printf("\r\nERROR: slot %d is empty, save a program first\r\n", slot);
+                return;
+            }
+            if (eeprom_set_boot_slot((uint8_t)slot)) {
+                printf("\r\nAuto-boot set to slot %d\r\n", slot);
             } else {
-                active_program = uploaded_program;
-                active_program_len = uploaded_program_len;
-                printf("\r\nRUNNING %u-byte program\r\n",
-                       (unsigned)uploaded_program_len);
+                printf("\r\nERROR set failed\r\n");
             }
         }
-        else if (strcmp(cmd, "program") == 0) {
-            // Print the currently uploaded program as hex (for debugging)
-            printf("\r\nUploaded program (%u bytes):\r\n",
-                   (unsigned)uploaded_program_len);
-            for (uint16_t i = 0; i < uploaded_program_len; i++) {
-                printf("%02X ", uploaded_program[i]);
-                if ((i + 1) % 8 == 0) printf("\r\n");
-            }
-            printf("\r\n");
+    }
+    else if (strcmp(cmd, "bootinfo") == 0) {
+        uint8_t slot;
+        if (eeprom_get_boot_slot(&slot)) {
+            printf("\r\nAuto-boot: slot %u\r\n", slot);
+        } else {
+            printf("\r\nAuto-boot: disabled (default program)\r\n");
         }
-        else if (strcmp(cmd, "eetest") == 0) {
-                printf("\r\nTesting EEPROM...\r\n");
-                if (eeprom_test()) {
-                    printf("EEPROM OK\r\n");
-                } else {
-                    printf("EEPROM FAIL — check wiring\r\n");
-                }
-            }
-        else if (strncmp(cmd, "save ", 5) == 0) {
-                int slot = atoi(cmd + 5);
-                if (slot < 0 || slot >= EEPROM_SLOT_COUNT) {
-                    printf("\r\nERROR: slot must be 0-%d\r\n", EEPROM_SLOT_COUNT - 1);
-                    return;
-                }
-                if (uploaded_program_len == 0) {
-                    printf("\r\nERROR: no program uploaded yet\r\n");
-                    return;
-                }
-                printf("\r\nSaving %u bytes to slot %d...\r\n",
-                       (unsigned)uploaded_program_len, slot);
-                if (eeprom_save_slot(slot, uploaded_program, uploaded_program_len)) {
-                    printf("OK saved\r\n");
-                } else {
-                    printf("ERROR save failed\r\n");
-                }
-            }
-            else if (strncmp(cmd, "loadslot ", 9) == 0) {
-                int slot = atoi(cmd + 9);
-                if (slot < 0 || slot >= EEPROM_SLOT_COUNT) {
-                    printf("\r\nERROR: slot must be 0-%d\r\n", EEPROM_SLOT_COUNT - 1);
-                    return;
-                }
-                uint16_t len;
-                if (!eeprom_load_slot((uint8_t)slot, uploaded_program, &len,
-                                      UPLOADED_PROGRAM_MAX_SIZE)) {
-                    printf("\r\nERROR slot %d empty or invalid\r\n", slot);
-                    return;
-                }
-                uploaded_program_len = len;
-                active_program = uploaded_program;
-                active_program_len = uploaded_program_len;
-                printf("\r\nLoaded %u bytes from slot %d, running\r\n",
-                       (unsigned)len, slot);
-            }
-            else if (strcmp(cmd, "slots") == 0) {
-                printf("\r\nSlot status:\r\n");
-                for (uint8_t i = 0; i < EEPROM_SLOT_COUNT; i++) {
-                    if (eeprom_slot_is_valid(i)) {
-                        uint16_t len = eeprom_slot_length(i);
-                        printf("  Slot %u: %u bytes\r\n", i, (unsigned)len);
-                    } else {
-                        printf("  Slot %u: empty\r\n", i);
-                    }
-                }
-            }
-            else if (strncmp(cmd, "boot ", 5) == 0) {
-                    if (strcmp(cmd + 5, "off") == 0 || strcmp(cmd + 5, "none") == 0) {
-                        if (eeprom_clear_boot_slot()) {
-                            printf("\r\nAuto-boot disabled\r\n");
-                        } else {
-                            printf("\r\nERROR clear failed\r\n");
-                        }
-                    } else {
-                        int slot = atoi(cmd + 5);
-                        if (slot < 0 || slot >= EEPROM_SLOT_COUNT) {
-                            printf("\r\nERROR: slot must be 0-%d (or 'off')\r\n",
-                                   EEPROM_SLOT_COUNT - 1);
-                            return;
-                        }
-                        if (!eeprom_slot_is_valid((uint8_t)slot)) {
-                            printf("\r\nERROR: slot %d is empty, save a program first\r\n", slot);
-                            return;
-                        }
-                        if (eeprom_set_boot_slot((uint8_t)slot)) {
-                            printf("\r\nAuto-boot set to slot %d\r\n", slot);
-                        } else {
-                            printf("\r\nERROR set failed\r\n");
-                        }
-                    }
-                }
-                else if (strcmp(cmd, "bootinfo") == 0) {
-                    uint8_t slot;
-                    if (eeprom_get_boot_slot(&slot)) {
-                        printf("\r\nAuto-boot: slot %u\r\n", slot);
-                    } else {
-                        printf("\r\nAuto-boot: disabled (default program)\r\n");
-                    }
-                }
-                else if (strcmp(cmd, "mon") == 0) {
-                        // Compact I/O state for live monitoring
-                        printf("\r\nMON I=");
-                        for (int i = 0; i < 8; i++) {
-                            printf("%d", g_io.digital_in[i] ? 1 : 0);
-                        }
-                        printf(" Q=");
-                        for (int i = 0; i < 4; i++) {
-                            printf("%d", g_io.digital_out[i] ? 1 : 0);
-                        }
-                        printf(" SCAN=%lu\r\n", scan_get_count());
-                    }
-        else if (strlen(cmd) > 0) {
+    }
+    else if (strcmp(cmd, "mon") == 0) {
+        printf("\r\nMON I=");
+        for (int i = 0; i < 8; i++) printf("%d", g_io.digital_in[i] ? 1 : 0);
+        printf(" Q=");
+        for (int i = 0; i < 4; i++) printf("%d", g_io.digital_out[i] ? 1 : 0);
+        printf(" SCAN=%lu\r\n", scan_get_count());
+    }
+    else if (strlen(cmd) > 0) {
         printf("\r\nUnknown: '%s' (try 'help')\r\n", cmd);
     }
 }
 
 void uart_console_poll(void) {
-    // ===== JSON OUTPUT FOR ESP32 — every 500ms =====
+    uint32_t now = HAL_GetTick();
+
+    // ===== JSON OUTPUT FOR ESP32 =====
+    // Conditions to send JSON:
+    // 1. Not in upload mode
+    // 2. No command pending
+    // 3. No typing activity for 1 second
+    // 4. Interval of 1 second elapsed since last JSON
     static uint32_t last_json_ms = 0;
-    if (HAL_GetTick() - last_json_ms >= 500) {
-        last_json_ms = HAL_GetTick();
-        printf("JSON:{\"I\":[%d,%d,%d,%d,%d,%d,%d,%d],\"Q\":[%d,%d,%d,%d],\"S\":%lu}\r\n",
+
+    bool idle = (upload_state == UPLOAD_IDLE)
+             && (!cmd_ready)
+             && (rx_index == 0)
+             && ((now - last_activity_ms) > 1000);
+
+    if (idle && (now - last_json_ms >= 1000)) {
+        last_json_ms = now;
+        printf("JSON:{\"I\":[%d,%d,%d,%d,%d,%d,%d,%d],"
+               "\"Q\":[%d,%d,%d,%d],\"S\":%lu}\r\n",
                g_io.digital_in[0] ? 1 : 0,
                g_io.digital_in[1] ? 1 : 0,
                g_io.digital_in[2] ? 1 : 0,
@@ -374,6 +372,8 @@ void uart_console_poll(void) {
         process_command(rx_buffer);
         rx_index = 0;
         cmd_ready = 0;
+        // Reset activity after command completes so JSON resumes after 1s
+        last_activity_ms = HAL_GetTick();
         printf("> ");
     }
 }

@@ -1,0 +1,148 @@
+{
+  "rungs": [
+    {
+      "branches": [
+        {
+          "elements": [
+            {
+              "type": "Coil",
+              "addr": "Q0",
+              "x": 380
+            },
+            {
+              "type": "Not Contact",
+              "addr": "I0",
+              "x": 180
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "branches": [
+        {
+          "elements": [
+            {
+              "type": "Coil",
+              "addr": "Q1",
+              "x": 380
+            },
+            {
+              "type": "Not Contact",
+              "addr": "I1",
+              "x": 180
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "branches": [
+        {
+          "elements": [
+            {
+              "type": "Coil",
+              "addr": "Q2",
+              "x": 380
+            },
+            {
+              "type": "Not Contact",
+              "addr": "I2",
+              "x": 180
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "branches": [
+        {
+          "elements": [
+            {
+              "type": "Coil",
+              "addr": "Q3",
+              "x": 380
+            },
+            {
+              "type": "Not Contact",
+              "addr": "I3",
+              "x": 180
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "branches": [
+        {
+          "elements": [
+            {
+              "type": "Coil",
+              "addr": "Q0",
+              "x": 380
+            },
+            {
+              "type": "Not Contact",
+              "addr": "I4",
+              "x": 180
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "branches": [
+        {
+          "elements": [
+            {
+              "type": "Coil",
+              "addr": "Q1",
+              "x": 380
+            },
+            {
+              "type": "Not Contact",
+              "addr": "I5",
+              "x": 180
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "branches": [
+        {
+          "elements": [
+            {
+              "type": "Coil",
+              "addr": "Q2",
+              "x": 380
+            },
+            {
+              "type": "Not Contact",
+              "addr": "I6",
+              "x": 180
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "branches": [
+        {
+          "elements": [
+            {
+              "type": "Coil",
+              "addr": "Q3",
+              "x": 380
+            },
+            {
+              "type": "Not Contact",
+              "addr": "I7",
+              "x": 180
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
